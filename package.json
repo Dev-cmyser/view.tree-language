@@ -1,6 +1,6 @@
 {
-    "name": "view.tree-language",
-    "displayName": "view.tree-language",
+    "name": "view-tree-language",
+    "displayName": "view-tree-language",
     "description": "view.tree language support",
     "repository": "https://github.com/stan-donarise/view.tree-language",
     "version": "0.0.1",
