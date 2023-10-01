@@ -84,8 +84,13 @@ function isItComponentProp( document: vscode.TextDocument, wordRange: vscode.Ran
 }
 
 async function findPropSymbol( tsUri: vscode.Uri, className: string, propName: string ) {
+	try {
+		await vscode.workspace.fs.stat( tsUri )
+	} catch {
+		return //ts file does not exist
+	}
 	const symbols = await vscode.commands.executeCommand('vscode.executeDocumentSymbolProvider', tsUri) as vscode.DocumentSymbol[]
-	const classSymbol = symbols[0].children.find( symb => symb.name == className )
+	const classSymbol = symbols?.[0].children.find( symb => symb.name == className )
 	const propSymbol = classSymbol?.children.find( symb => symb.name == propName )
 	return propSymbol
 }
