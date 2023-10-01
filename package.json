@@ -3,7 +3,7 @@
     "displayName": "view-tree-language",
     "description": "view.tree language support",
     "repository": "https://github.com/stan-donarise/view.tree-language",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "publisher": "stan-donarise",
     "engines": {
         "vscode": "^1.76.0"
@@ -12,71 +12,17 @@
         "Programming Languages"
     ],
     "activationEvents": [
-        "onLanguage:view.tree"
+        "onLanguage:tree"
     ],
     "main": "./out/extension.js",
-    "configurationDefaults": {
-        "tree": {
-            "editor.semanticHighlighting.enabled": true
-        }
-    },
-    "contributes": {
-        "languages": [
-            {
-                "id": "view.tree",
-                "aliases": [
-                    "view.tree"
-                ],
-                "extensions": [
-                    ".view.tree"
-                ],
-                "configuration": "./language-configuration.json"
-            }
-        ],
-        "semanticTokenTypes": [
-            {
-                "id": "invalid",
-                "description": "Invalid syntax."
-            }
-        ],
-        "colors": [
-            {
-                "id": "invalid.background",
-                "description": "xxx",
-                "defaults": {
-                    "dark": "#ff0000",
-                    "highContrast": "#ff0000",
-                    "highContrastLight": "#ff0000",
-                    "light": "#ff0000"
-                }
-            }
-        ],
-        "semanticTokenScopes": [
-            {
-                "language": "view.tree",
-                "scopes": {
-                    "invalid": [
-                        "invalid.background"
-                    ]
-                }
-            }
-        ],
-        "grammars": [
-            {
-                "language": "view.tree",
-                "scopeName": "source.view.tree",
-                "path": "./syntaxes/view.tree.tmLanguage.json"
-            }
-        ]
-    },
     "scripts": {
         "vscode:prepublish": "npm run compile",
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./"
     },
-    "dependencies": {
-        "mol_tree2": "*"
-    },
+    "extensionDependencies": [
+        "nin-jin.vscode-language-tree"
+    ],
     "devDependencies": {
         "@types/node": "^18.15.9",
         "@types/vscode": "^1.76.0",
