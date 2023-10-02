@@ -15,7 +15,7 @@ class Provider implements
 		if( !nodeName ) return []
 		
 		if( !isItComponentProp( document, range ) ) return []
-				
+		
 		const className = '$' + document.getText( document.getWordRangeAtPosition( new vscode.Position(0, 1) ) )
 		const viewTsUri = vscode.Uri.file( document.uri.path.replace(/\.[^.]*$/, '.ts') )
 		let propSymbol = await findPropSymbol( viewTsUri, className, nodeName )
@@ -54,17 +54,23 @@ class Provider implements
 			const parts = nodeName.split( '_' )
 			
 			const mamUri = vscode.workspace.workspaceFolders![ 0 ].uri
-			const viewTreeUri = vscode.Uri.joinPath( mamUri, parts.join( '/' ), parts.at(-1)!+ '.view.tree' )
-			try {
-				await vscode.workspace.fs.stat( viewTreeUri )
-
-			} catch {
-				const symbols = await vscode.commands.executeCommand('vscode.executeWorkspaceSymbolProvider', '$' + nodeName) as vscode.SymbolInformation[]
-				if( symbols[0] ) return [ symbols[0].location ]
+			
+			const firstCharRange = new vscode.Range( new vscode.Position(0, 0), new vscode.Position(0, 0) )
+			
+			const viewTreeUri = vscode.Uri.joinPath( mamUri, parts.join( '/' ), parts.at(-1) + '.view.tree' )
+			if( await fileExist( viewTreeUri ) ) {
+				return [ new vscode.Location( viewTreeUri, firstCharRange ) ]
 			}
 			
-			const locationRange = new vscode.Range( new vscode.Position(0, 0), new vscode.Position(0, 0) )
-			return [ new vscode.Location( viewTreeUri, locationRange ) ]
+			const viewTreeUri2 = vscode.Uri.joinPath( mamUri, [ ...parts, parts.at(-1) ].join( '/' ), parts.at(-1) + '.view.tree' )
+			if( await fileExist( viewTreeUri2 ) ) {
+				return [ new vscode.Location( viewTreeUri2, firstCharRange ) ]
+			}
+			
+			const symbols = await vscode.commands.executeCommand('vscode.executeWorkspaceSymbolProvider', '$' + nodeName) as vscode.SymbolInformation[]
+			if( symbols[0] ) return [ symbols[0].location ]
+			
+			return [ new vscode.Location( viewTreeUri, firstCharRange ) ]
 		}
 		
 		if( !isItComponentProp( document, range ) ) return []
@@ -100,11 +106,7 @@ function isItComponentProp( document: vscode.TextDocument, wordRange: vscode.Ran
 }
 
 async function findClassSymbol( tsUri: vscode.Uri, className: string ) {
-	try {
-		await vscode.workspace.fs.stat( tsUri )
-	} catch {
-		return //ts file does not exist
-	}
+	if( ! await fileExist( tsUri ) ) return
 	const symbols = await vscode.commands.executeCommand('vscode.executeDocumentSymbolProvider', tsUri) as vscode.DocumentSymbol[]
 	const classSymbol = symbols?.[0].children.find( symb => symb.name == className )
 	return classSymbol
@@ -114,6 +116,15 @@ async function findPropSymbol( tsUri: vscode.Uri, className: string, propName: s
 	const classSymbol = await findClassSymbol( tsUri, className )
 	const propSymbol = classSymbol?.children.find( symb => symb.name == propName )
 	return propSymbol
+}
+
+async function fileExist( uri: vscode.Uri ) {
+	try {
+		await vscode.workspace.fs.stat( uri )
+		return true
+	} catch {
+		return false
+	}
 }
 
 const provider = new Provider()
