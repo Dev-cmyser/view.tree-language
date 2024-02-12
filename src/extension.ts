@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { SourceMapConsumer } from 'source-map'
+import { SourceMapConsumer } from 'source-map-js'
 
 class Provider implements
 	vscode.DefinitionProvider
@@ -85,17 +85,17 @@ class Provider implements
         const sourceMapUri = vscode.Uri.file( document.uri.path.replace(/([^\/]*$)/, '-view.tree/$1.d.ts.map') )
         const sourceMap = await vscode.workspace.openTextDocument( sourceMapUri )
         
-        const consumer = await new SourceMapConsumer(JSON.parse( sourceMap.getText()))
+        const consumer = new SourceMapConsumer( JSON.parse( sourceMap.getText() ) )
+
         const genPos = consumer.generatedPositionFor({
-            source: consumer.sources[ 0 ],
+            source: (consumer as any).sources[ 0 ],
             line: range.start.line + 1,
             column: range.start.character + 1,
         })
-        consumer.destroy()
         
         const dts = vscode.Uri.file( document.uri.path.replace(/([^\/]*$)/, '-view.tree/$1.d.ts') )
         const dtsDoc = await vscode.workspace.openTextDocument( dts )
-        const symbolPos = dtsDoc.lineAt( Number( genPos.line ) - 2 ).range.end.translate( 0, -5 )
+        const symbolPos = dtsDoc.lineAt( Number( genPos.line ) + 2 ).range.end.translate( 0, -5 )
 
         const locations: any = await vscode.commands.executeCommand(
             'vscode.executeDefinitionProvider', 
