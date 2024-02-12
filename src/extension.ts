@@ -1,59 +1,42 @@
 import * as vscode from 'vscode';
+import { SourceMapConsumer } from 'source-map'
 
 class Provider implements
-	vscode.ImplementationProvider,
 	vscode.DefinitionProvider
 {
-	async provideImplementation(
-		document: vscode.TextDocument, 
-		position: vscode.Position, 
-		token: vscode.CancellationToken,
-	) {
-		const range = document.getWordRangeAtPosition( position )
-		if( !range ) return []
-		const nodeName = document.getText( range )
-		if( !nodeName ) return []
-		
-		if( !isItComponentProp( document, range ) ) return []
-		
-		const className = '$' + document.getText( document.getWordRangeAtPosition( new vscode.Position(0, 1) ) )
-		const viewTsUri = vscode.Uri.file( document.uri.path.replace(/\.[^.]*$/, '.ts') )
-		let propSymbol = await findPropSymbol( viewTsUri, className, nodeName )
-		
-		if (! propSymbol ) return []
-		
-		const locations: any[] = await vscode.commands.executeCommand(
-			'vscode.executeImplementationProvider', 
-			viewTsUri, 
-			propSymbol.selectionRange.start
-		)
-		return locations
-	}
 	
 	async provideDefinition(
 		document: vscode.TextDocument, 
 		position: vscode.Position, 
 		token: vscode.CancellationToken,
 	): Promise<vscode.Location[]> {
+
 		const range = document.getWordRangeAtPosition( position )
 		if( !range ) return []
+
 		const nodeName = document.getText( range )
 		if( !nodeName ) return []
-		
+
+        // component class name -> go to view.ts
 		if( range.start.character == 1 && range.start.line == 0 ) {
+
 			let viewTsUri = vscode.Uri.file( document.uri.path.replace(/.tree$/, '.ts') )
+
 			const classSymbol = await findClassSymbol( viewTsUri, '$' + nodeName )
 			if( classSymbol ) return [ new vscode.Location( viewTsUri, classSymbol.range ) ]
 			
 			const locationRange = new vscode.Range( new vscode.Position(0, 0), new vscode.Position(0, 0) )
 			return [ new vscode.Location( viewTsUri, locationRange ) ]
+
 		}
-		
-		let class_check_char = document.getText( new vscode.Range( range.start.translate(0, -1), range.start ) )
-		if( class_check_char == '$') {
+
+        // subcomponent class name -> go to subcomp view.tree
+		let leftChar = document.getText( new vscode.Range( range.start.translate(0, -1), range.start ) )
+		if( leftChar == '$') {
+
 			const parts = nodeName.split( '_' )
-			
-			const mamUri = vscode.workspace.workspaceFolders![ 0 ].uri
+
+            const mamUri = vscode.workspace.workspaceFolders![ 0 ].uri
 			
 			const firstCharRange = new vscode.Range( new vscode.Position(0, 0), new vscode.Position(0, 0) )
 			
@@ -71,27 +54,56 @@ class Provider implements
 			if( symbols[0] ) return [ symbols[0].location ]
 			
 			return [ new vscode.Location( viewTreeUri, firstCharRange ) ]
+
 		}
 		
-		if( !isItComponentProp( document, range ) ) return []
-		
-		const className = '$' + document.getText( document.getWordRangeAtPosition( new vscode.Position(0, 1) ) )
-		let viewTsUri = vscode.Uri.file( document.uri.path.replace(/.tree$/, '.ts') )
-		let propSymbol = await findPropSymbol( viewTsUri, className, nodeName )
-		
-		if( !propSymbol ) {
-			viewTsUri = vscode.Uri.file( document.uri.path.replace(/([^\/]*$)/, '-view.tree/$1.ts') )
-			propSymbol = await findPropSymbol( viewTsUri, className, nodeName )
-		}
-		
-		if (! propSymbol ) return []
-		
-		const locations: any[] = await vscode.commands.executeCommand(
-			'vscode.executeDefinitionProvider', 
-			viewTsUri, 
-			propSymbol.selectionRange.start
-		)
-		return locations.map( l=> new vscode.Location( l.targetUri, l.targetRange ) )
+        // component prop -> go to view.ts
+		if( isItComponentProp( document, range ) ) {
+
+            const className = '$' + document.getText( document.getWordRangeAtPosition( new vscode.Position(0, 1) ) )
+
+            let viewTsUri = vscode.Uri.file( document.uri.path.replace(/.tree$/, '.ts') )
+            let propSymbol = await findPropSymbol( viewTsUri, className, nodeName )
+            
+            if( !propSymbol ) {
+                viewTsUri = vscode.Uri.file( document.uri.path.replace(/([^\/]*$)/, '-view.tree/$1.ts') )
+                propSymbol = await findPropSymbol( viewTsUri, className, nodeName )
+            }
+            
+            if( !propSymbol ) return []
+            
+            const locations: any[] = await vscode.commands.executeCommand(
+                'vscode.executeDefinitionProvider', 
+                viewTsUri, 
+                propSymbol.selectionRange.start
+            )
+            return locations.map( l=> new vscode.Location( l.targetUri, l.targetRange ) )
+
+        }
+            
+        // subcomponent prop -> go to view.tree
+        const sourceMapUri = vscode.Uri.file( document.uri.path.replace(/([^\/]*$)/, '-view.tree/$1.d.ts.map') )
+        const sourceMap = await vscode.workspace.openTextDocument( sourceMapUri )
+        
+        const consumer = await new SourceMapConsumer(JSON.parse( sourceMap.getText()))
+        const genPos = consumer.generatedPositionFor({
+            source: consumer.sources[ 0 ],
+            line: range.start.line + 1,
+            column: range.start.character + 1,
+        })
+        consumer.destroy()
+        
+        const dts = vscode.Uri.file( document.uri.path.replace(/([^\/]*$)/, '-view.tree/$1.d.ts') )
+        const dtsDoc = await vscode.workspace.openTextDocument( dts )
+        const symbolPos = dtsDoc.lineAt( Number( genPos.line ) - 2 ).range.end.translate( 0, -5 )
+
+        const locations: any = await vscode.commands.executeCommand(
+            'vscode.executeDefinitionProvider', 
+            dts, 
+            symbolPos,
+        )
+        
+        return locations?.[0] ? [ new vscode.Location( locations[0].targetUri, locations[0].targetSelectionRange.end ) ] : []
 	}
 	
 }
@@ -99,8 +111,8 @@ class Provider implements
 function isItComponentProp( document: vscode.TextDocument, wordRange: vscode.Range ) {
 	if( wordRange.start.character == 1 ) return true
 	
-	let bind_check_char = document.getText( new vscode.Range( wordRange.start.translate(0, -2), wordRange.start.translate(0, -1) ) )
-	if( bind_check_char != '>' && bind_check_char != '=' ) return false
+	let leftChar = document.getText( new vscode.Range( wordRange.start.translate(0, -2), wordRange.start.translate(0, -1) ) )
+	if( leftChar != '>' && leftChar != '=' ) return false
 	
 	return true
 }
@@ -132,6 +144,5 @@ const provider = new Provider()
 export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.languages.registerDefinitionProvider( { language: 'tree', pattern: '**/*.view.tree' }, provider ),
-		vscode.languages.registerImplementationProvider( { language: 'tree', pattern: '**/*.view.tree' }, provider ),
 	)
 }

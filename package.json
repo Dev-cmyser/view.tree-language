@@ -3,7 +3,7 @@
     "displayName": "view-tree-language",
     "description": "view.tree language support",
     "repository": "https://github.com/stan-donarise/view.tree-language",
-    "version": "0.0.5",
+    "version": "0.0.6",
     "publisher": "stan-donarise",
     "engines": {
         "vscode": "^1.76.0"
@@ -27,5 +27,8 @@
         "@types/node": "^18.15.9",
         "@types/vscode": "^1.76.0",
         "typescript": "^5.0.2"
+    },
+    "dependencies": {
+        "source-map": "^0.7.4"
     }
 }
