@@ -65,10 +65,10 @@ class Provider implements
             let viewTsUri = vscode.Uri.file( document.uri.path.replace(/.tree$/, '.ts') )
             let propSymbol = await findPropSymbol( viewTsUri, className, nodeName )
             
-            if( !propSymbol ) {
-                viewTsUri = vscode.Uri.file( document.uri.path.replace(/([^\/]*$)/, '-view.tree/$1.ts') )
-                propSymbol = await findPropSymbol( viewTsUri, className, nodeName )
-            }
+            // if( !propSymbol ) {
+            //     viewTsUri = vscode.Uri.file( document.uri.path.replace(/([^\/]*$)/, '-view.tree/$1.ts') )
+            //     propSymbol = await findPropSymbol( viewTsUri, className, nodeName )
+            // }
             
             if( !propSymbol ) return []
             
