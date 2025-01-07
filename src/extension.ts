@@ -17,7 +17,7 @@ class Provider implements
 		const nodeName = document.getText( range )
 		if( !nodeName ) return []
 
-        // component class name -> go to view.ts
+		// component class name -> go to view.ts
 		if( range.start.character == 1 && range.start.line == 0 ) {
 
 			let viewTsUri = vscode.Uri.file( document.uri.path.replace(/.tree$/, '.ts') )
@@ -30,13 +30,13 @@ class Provider implements
 
 		}
 
-        // subcomponent class name -> go to subcomp view.tree
+		// subcomponent class name -> go to subcomp view.tree
 		let leftChar = document.getText( new vscode.Range( range.start.translate(0, -1), range.start ) )
 		if( leftChar == '$') {
 
 			const parts = nodeName.split( '_' )
 
-            const mamUri = vscode.workspace.workspaceFolders![ 0 ].uri
+			const mamUri = vscode.workspace.workspaceFolders![ 0 ].uri
 			
 			const firstCharRange = new vscode.Range( new vscode.Position(0, 0), new vscode.Position(0, 0) )
 			
@@ -57,53 +57,53 @@ class Provider implements
 
 		}
 		
-        // component prop -> go to view.ts
+		// component prop -> go to view.ts
 		if( isItComponentProp( document, range ) ) {
 
-            const className = '$' + document.getText( document.getWordRangeAtPosition( new vscode.Position(0, 1) ) )
+			const className = '$' + document.getText( document.getWordRangeAtPosition( new vscode.Position(0, 1) ) )
 
-            let viewTsUri = vscode.Uri.file( document.uri.path.replace(/.tree$/, '.ts') )
-            let propSymbol = await findPropSymbol( viewTsUri, className, nodeName )
-            
-            // if( !propSymbol ) {
-            //     viewTsUri = vscode.Uri.file( document.uri.path.replace(/([^\/]*$)/, '-view.tree/$1.ts') )
-            //     propSymbol = await findPropSymbol( viewTsUri, className, nodeName )
-            // }
-            
-            if( !propSymbol ) return []
-            
-            const locations: any[] = await vscode.commands.executeCommand(
-                'vscode.executeDefinitionProvider', 
-                viewTsUri, 
-                propSymbol.selectionRange.start
-            )
-            return locations.map( l=> new vscode.Location( l.targetUri, l.targetRange ) )
+			let viewTsUri = vscode.Uri.file( document.uri.path.replace(/.tree$/, '.ts') )
+			let propSymbol = await findPropSymbol( viewTsUri, className, nodeName )
+			
+			// if( !propSymbol ) {
+			//	 viewTsUri = vscode.Uri.file( document.uri.path.replace(/([^\/]*$)/, '-view.tree/$1.ts') )
+			//	 propSymbol = await findPropSymbol( viewTsUri, className, nodeName )
+			// }
+			
+			if( !propSymbol ) return []
+			
+			const locations: any[] = await vscode.commands.executeCommand(
+				'vscode.executeDefinitionProvider', 
+				viewTsUri, 
+				propSymbol.selectionRange.start
+			)
+			return locations.map( l=> new vscode.Location( l.targetUri, l.targetRange ) )
 
-        }
-            
-        // subcomponent prop -> go to view.tree
-        const sourceMapUri = vscode.Uri.file( document.uri.path.replace(/([^\/]*$)/, '-view.tree/$1.d.ts.map') )
-        const sourceMap = await vscode.workspace.openTextDocument( sourceMapUri )
-        
-        const consumer = new SourceMapConsumer( JSON.parse( sourceMap.getText() ) )
+		}
+			
+		// subcomponent prop -> go to view.tree
+		const sourceMapUri = vscode.Uri.file( document.uri.path.replace(/([^\/]*$)/, '-view.tree/$1.d.ts.map') )
+		const sourceMap = await vscode.workspace.openTextDocument( sourceMapUri )
+		
+		const consumer = new SourceMapConsumer( JSON.parse( sourceMap.getText() ) )
 
-        const genPos = consumer.generatedPositionFor({
-            source: (consumer as any).sources[ 0 ],
-            line: range.start.line + 1,
-            column: range.start.character + 1,
-        })
-        
-        const dts = vscode.Uri.file( document.uri.path.replace(/([^\/]*$)/, '-view.tree/$1.d.ts') )
-        const dtsDoc = await vscode.workspace.openTextDocument( dts )
-        const symbolPos = dtsDoc.lineAt( Number( genPos.line ) + 2 ).range.end.translate( 0, -5 )
+		const genPos = consumer.generatedPositionFor({
+			source: (consumer as any).sources[ 0 ],
+			line: range.start.line + 1,
+			column: range.start.character + 1,
+		})
+		
+		const dts = vscode.Uri.file( document.uri.path.replace(/([^\/]*$)/, '-view.tree/$1.d.ts') )
+		const dtsDoc = await vscode.workspace.openTextDocument( dts )
+		const symbolPos = dtsDoc.lineAt( Number( genPos.line ) + 2 ).range.end.translate( 0, -5 )
 
-        const locations: any = await vscode.commands.executeCommand(
-            'vscode.executeDefinitionProvider', 
-            dts, 
-            symbolPos,
-        )
-        
-        return locations?.[0] ? [ new vscode.Location( locations[0].targetUri, locations[0].targetSelectionRange.end ) ] : []
+		const locations: any = await vscode.commands.executeCommand(
+			'vscode.executeDefinitionProvider', 
+			dts, 
+			symbolPos,
+		)
+		
+		return locations?.[0] ? [ new vscode.Location( locations[0].targetUri, locations[0].targetSelectionRange.end ) ] : []
 	}
 	
 }
