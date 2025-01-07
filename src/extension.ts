@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { SourceMapConsumer } from 'source-map-js'
+import { createViewCssTs, createViewTs, newModuleTs, newModuleViewTree } from './commands';
 
 class Provider implements
 	vscode.DefinitionProvider
@@ -36,16 +37,14 @@ class Provider implements
 
 			const parts = nodeName.split( '_' )
 
-			const mamUri = vscode.workspace.workspaceFolders![ 0 ].uri
-			
 			const firstCharRange = new vscode.Range( new vscode.Position(0, 0), new vscode.Position(0, 0) )
 			
-			const viewTreeUri = vscode.Uri.joinPath( mamUri, parts.join( '/' ), parts.at(-1) + '.view.tree' )
+			const viewTreeUri = vscode.Uri.joinPath( mamUri(), parts.join( '/' ), parts.at(-1) + '.view.tree' )
 			if( await fileExist( viewTreeUri ) ) {
 				return [ new vscode.Location( viewTreeUri, firstCharRange ) ]
 			}
 			
-			const viewTreeUri2 = vscode.Uri.joinPath( mamUri, [ ...parts, parts.at(-1) ].join( '/' ), parts.at(-1) + '.view.tree' )
+			const viewTreeUri2 = vscode.Uri.joinPath( mamUri(), [ ...parts, parts.at(-1) ].join( '/' ), parts.at(-1) + '.view.tree' )
 			if( await fileExist( viewTreeUri2 ) ) {
 				return [ new vscode.Location( viewTreeUri2, firstCharRange ) ]
 			}
@@ -64,11 +63,6 @@ class Provider implements
 
 			let viewTsUri = vscode.Uri.file( document.uri.path.replace(/.tree$/, '.ts') )
 			let propSymbol = await findPropSymbol( viewTsUri, className, nodeName )
-			
-			// if( !propSymbol ) {
-			//	 viewTsUri = vscode.Uri.file( document.uri.path.replace(/([^\/]*$)/, '-view.tree/$1.ts') )
-			//	 propSymbol = await findPropSymbol( viewTsUri, className, nodeName )
-			// }
 			
 			if( !propSymbol ) return []
 			
@@ -108,6 +102,10 @@ class Provider implements
 	
 }
 
+function mamUri() {
+	return vscode.workspace.workspaceFolders![0].uri
+}
+
 function isItComponentProp( document: vscode.TextDocument, wordRange: vscode.Range ) {
 	if( wordRange.start.character == 1 ) return true
 	
@@ -144,5 +142,9 @@ const provider = new Provider()
 export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		vscode.languages.registerDefinitionProvider( { language: 'tree', pattern: '**/*.view.tree' }, provider ),
+		newModuleTs,
+		newModuleViewTree,
+		createViewTs,
+		createViewCssTs,
 	)
 }

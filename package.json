@@ -15,6 +15,50 @@
         "onLanguage:tree"
     ],
     "main": "./out/main.js",
+    "contributes": {
+      "commands": [
+        {
+          "command": "mam.newModuleTs",
+          "title": "MAM: New module (.ts)"
+        },
+        {
+          "command": "mam.newModuleViewTree",
+          "title": "MAM: New module (.view.tree)"
+        },
+        {
+          "command": "mam.createViewTs",
+          "title": "MAM: Create .view.ts"
+        },
+        {
+          "command": "mam.createViewCssTs",
+          "title": "MAM: Create .view.css.ts"
+        }
+      ],
+      "menus": {
+        "explorer/context": [
+          {
+            "when": "explorerResourceIsFolder",
+            "group": "2_workspace",
+            "command": "mam.newModuleTs"
+          },
+          {
+            "when": "explorerResourceIsFolder",
+            "group": "2_workspace",
+            "command": "mam.newModuleViewTree"
+          },
+          {
+            "when": "resourceFilename =~ /\\.view\\.tree/",
+            "group": "2_workspace",
+            "command": "mam.createViewTs"
+          },
+          {
+            "when": "resourceFilename =~ /\\.view\\.tree/",
+            "group": "2_workspace",
+            "command": "mam.createViewCssTs"
+          }
+        ]
+      }
+    },
     "scripts": {
         "vscode:prepublish": "npm run esbuild-base -- --minify",
         "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/main.js --external:vscode --format=cjs --platform=node",
