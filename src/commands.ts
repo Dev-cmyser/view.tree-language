@@ -42,6 +42,8 @@ async function newModulePath( extension: 'ts' | 'view.tree', parentPath?: string
 			placeHolder: 'Module name',
 		})
 	
+		if( !name ) return parentPath + `/${ parentPath.replace(/\\/g, '/').split('/').at(-1) }.${ extension }`
+		
 		return parentPath + `/${ name }/${ name }.${ extension }`
 	}
 
