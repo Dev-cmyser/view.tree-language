@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 
 export const newModuleTs = vscode.commands.registerCommand('mam.newModuleTs', async (...commandArgs) => {
 	const path = await newModulePath( 'ts', commandArgs[0]?.path )
+	if( !path ) return
 	const newFile = vscode.Uri.file( path )
 	const existed = await fileExist( newFile )
 	await createAndOpenFile( newFile )
@@ -10,6 +11,7 @@ export const newModuleTs = vscode.commands.registerCommand('mam.newModuleTs', as
 
 export const newModuleViewTree = vscode.commands.registerCommand('mam.newModuleViewTree', async (...commandArgs) => {
 	const path = await newModulePath( 'view.tree', commandArgs[0]?.path )
+	if( !path ) return
 	const newFile = vscode.Uri.file( path )
 	const existed = await fileExist( newFile )
 	await createAndOpenFile( newFile )
@@ -33,20 +35,30 @@ export const createViewCssTs = vscode.commands.registerCommand('mam.createViewCs
 })
 
 async function newModulePath( extension: 'ts' | 'view.tree', parentPath?: string ) {
-	const fullName = parentPath ? '' : await vscode.window.showInputBox({
-		value: '',
-		placeHolder: parentPath ? 'Module name' : 'Full module name (e.g. my_app_module)',
+
+	if( parentPath ) {
+		const name = await vscode.window.showInputBox({
+			value: '',
+			placeHolder: 'Module name',
+		})
+	
+		return parentPath + `/${ name }/${ name }.${ extension }`
+	}
+
+	const default_value = vscode.window.activeTextEditor?.document.uri.path
+		.replace( vscode.workspace.workspaceFolders![0].uri.path, '' )
+		.slice( 1 ).replace(/\\/g, '/').split('/').slice( 0, 2 ).join('_') + '_'
+	
+	const fullName = await vscode.window.showInputBox({
+		value: default_value,
+		placeHolder: 'Full module name (e.g. my_app_module)',
 	})
-	const fullNameSplit = fullName?.split('_')
+	if( !fullName ) return null
 
-	const name = parentPath ? await vscode.window.showInputBox({
-		value: '',
-		placeHolder: parentPath ? 'Module name' : 'Full module name (e.g. my_app_module)',
-	}) : fullNameSplit?.at(-1)
+	const parts = fullName?.split('_')
 
-	return parentPath
-		? parentPath + `/${name}/${name}.${extension}`
-		: vscode.workspace.workspaceFolders![0].uri.path + `/${fullNameSplit?.join('/')}/${name}.${extension}` 
+	return vscode.workspace.workspaceFolders![0].uri.path + `/${ parts?.join('/') }/${ parts?.at(-1) }.${ extension }` 
+
 }
 
 async function fileExist( uri: vscode.Uri ) {
