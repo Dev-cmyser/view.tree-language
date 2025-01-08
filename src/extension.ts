@@ -110,7 +110,7 @@ function isItComponentProp( document: vscode.TextDocument, wordRange: vscode.Ran
 	if( wordRange.start.character == 1 ) return true
 	
 	let leftChar = document.getText( new vscode.Range( wordRange.start.translate(0, -2), wordRange.start.translate(0, -1) ) )
-	if( leftChar != '>' && leftChar != '=' ) return false
+	if( leftChar != '>' && leftChar != '=' && leftChar != '^' ) return false
 	
 	return true
 }
