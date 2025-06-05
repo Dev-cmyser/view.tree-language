@@ -17,30 +17,47 @@ async function scanProject(): Promise<ProjectData> {
     molComponents: new Set(),
   };
 
+  console.log('[view.tree] Starting project scan...');
+
+  // Проверяем что workspace открыт
+  if (!vscode.workspace.workspaceFolders) {
+    console.log('[view.tree] No workspace folders found');
+    return data;
+  }
+
   // Сканируем .view.tree файлы
-  const viewTreeFiles = await vscode.workspace.findFiles("**/*.view.tree");
+  const viewTreeFiles = await vscode.workspace.findFiles("**/*.view.tree", "**/node_modules/**");
+  console.log(`[view.tree] Found ${viewTreeFiles.length} .view.tree files`);
+  
   for (const file of viewTreeFiles) {
     try {
       const buffer = await vscode.workspace.fs.readFile(file);
       const content = buffer.toString();
+      console.log(`[view.tree] Parsing ${file.path}`);
       parseViewTreeFile(content, data);
     } catch (error) {
-      // Игнорируем ошибки чтения файлов
+      console.log(`[view.tree] Error reading ${file.path}:`, error);
     }
   }
 
   // Сканируем .ts файлы для поиска $mol компонентов
-  const tsFiles = await vscode.workspace.findFiles("**/*.ts");
-  for (const file of tsFiles) {
+  const tsFiles = await vscode.workspace.findFiles("**/*.ts", "**/node_modules/**");
+  console.log(`[view.tree] Found ${tsFiles.length} .ts files`);
+  
+  for (const file of tsFiles.slice(0, 100)) { // Ограничиваем количество для производительности
     try {
       const buffer = await vscode.workspace.fs.readFile(file);
       const content = buffer.toString();
       parseTsFile(content, data);
     } catch (error) {
-      // Игнорируем ошибки чтения файлов
+      console.log(`[view.tree] Error reading ${file.path}:`, error);
     }
   }
 
+  console.log(`[view.tree] Scan complete: ${data.components.size} components, ${data.molComponents.size} mol components, ${data.properties.size} properties`);
+  console.log('[view.tree] Components found:', Array.from(data.components));
+  console.log('[view.tree] Mol components found:', Array.from(data.molComponents));
+  
   return data;
 }
 
@@ -59,10 +76,37 @@ function parseViewTreeFile(content: string, data: ProjectData) {
       }
     }
 
+    // Ищем ВСЕ $mol компоненты в строке (включая в привязках)
+    const molMatches = line.match(/\$mol_\w+/g);
+    if (molMatches) {
+      for (const match of molMatches) {
+        data.molComponents.add(match);
+      }
+    }
+
+    // Ищем все $-компоненты в строке  
+    const allComponentMatches = line.match(/\$\w+/g);
+    if (allComponentMatches) {
+      for (const match of allComponentMatches) {
+        if (!match.startsWith("$mol_")) {
+          data.components.add(match);
+        }
+      }
+    }
+
     // Ищем свойства (строки с отступом без <= и <=>)
     const indentMatch = line.match(/^(\s+)([a-zA-Z_][a-zA-Z0-9_?*]*)\s*/);
-    if (indentMatch && indentMatch[1].length > 0 && !trimmed.includes("<=")) {
+    if (indentMatch && indentMatch[1].length > 0 && !trimmed.includes("<=") && !trimmed.includes("<=>")) {
       const property = indentMatch[2];
+      if (!property.startsWith("$") && property !== "null" && property !== "true" && property !== "false") {
+        data.properties.add(property);
+      }
+    }
+
+    // Ищем свойства в привязках: <= PropertyName
+    const bindingMatch = trimmed.match(/<=\s+([a-zA-Z_][a-zA-Z0-9_?*]*)/);
+    if (bindingMatch) {
+      const property = bindingMatch[1];
       if (!property.startsWith("$")) {
         data.properties.add(property);
       }
@@ -81,6 +125,7 @@ function parseTsFile(content: string, data: ProjectData) {
 }
 
 function refreshProjectData() {
+  console.log('[view.tree] Refreshing project data...');
   projectDataPromise = scanProject();
 }
 
@@ -310,6 +355,18 @@ class CompletionProvider implements vscode.CompletionItemProvider {
   }
 
   private async addComponentCompletions(items: vscode.CompletionItem[], projectData: ProjectData) {
+    console.log(`[view.tree] Adding component completions: ${projectData.components.size} components, ${projectData.molComponents.size} mol components`);
+    
+    // Добавляем $mol компоненты с приоритетом
+    for (const component of projectData.molComponents) {
+      const item = new vscode.CompletionItem(component, vscode.CompletionItemKind.Class);
+      item.detail = "$mol framework component";
+      item.insertText = component;
+      item.sortText = "0" + component;
+      items.push(item);
+    }
+
+    // Добавляем компоненты из проекта
     for (const component of projectData.components) {
       const item = new vscode.CompletionItem(component, vscode.CompletionItemKind.Class);
       item.detail = "Project component";
@@ -318,12 +375,13 @@ class CompletionProvider implements vscode.CompletionItemProvider {
       items.push(item);
     }
 
+    // Добавляем компоненты из workspace symbols
     const symbols = (await vscode.commands.executeCommand(
       "vscode.executeWorkspaceSymbolProvider",
       "$",
     )) as vscode.SymbolInformation[];
     for (const symbol of symbols.slice(0, 30)) {
-      if (symbol.name.startsWith("$") && !projectData.components.has(symbol.name)) {
+      if (symbol.name.startsWith("$") && !projectData.components.has(symbol.name) && !projectData.molComponents.has(symbol.name)) {
         const item = new vscode.CompletionItem(symbol.name, vscode.CompletionItemKind.Class);
         item.detail = symbol.containerName;
         item.insertText = symbol.name;
@@ -331,6 +389,8 @@ class CompletionProvider implements vscode.CompletionItemProvider {
         items.push(item);
       }
     }
+    
+    console.log(`[view.tree] Added ${items.length} completion items`);
   }
 
   private addMolComponentCompletions(items: vscode.CompletionItem[], projectData: ProjectData) {
