@@ -5,16 +5,17 @@ import { createViewCssTs, createViewTs, newModuleTs, newModuleViewTree } from ".
 interface ProjectData {
 	components: Set<string>;
 	properties: Set<string>;
-	molComponents: Set<string>;
 }
 
-let projectDataPromise: Thenable<ProjectData>;
+let projectData: ProjectData = {
+	components: new Set(),
+	properties: new Set(),
+};
 
 async function scanProject(): Promise<ProjectData> {
 	const data: ProjectData = {
 		components: new Set(),
 		properties: new Set(),
-		molComponents: new Set(),
 	};
 
 	console.log("[view.tree] Starting project scan...");
@@ -55,11 +56,8 @@ async function scanProject(): Promise<ProjectData> {
 		}
 	}
 
-	console.log(
-		`[view.tree] Scan complete: ${data.components.size} components, ${data.molComponents.size} mol components, ${data.properties.size} properties`,
-	);
+	console.log(`[view.tree] Scan complete: ${data.components.size} components, ${data.properties.size} properties`);
 	console.log("[view.tree] Components found:", Array.from(data.components));
-	console.log("[view.tree] Mol components found:", Array.from(data.molComponents));
 
 	return data;
 }
@@ -70,30 +68,11 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 	for (const line of lines) {
 		const trimmed = line.trim();
 
-		// Ищем определения компонентов: $my_component $mol_view
-		const componentMatch = trimmed.match(/^(\$\w+)\s+(\$\w+)/);
-		if (componentMatch) {
-			data.components.add(componentMatch[1]);
-			if (componentMatch[2].startsWith("$mol_")) {
-				data.molComponents.add(componentMatch[2]);
-			}
-		}
-
-		// Ищем ВСЕ $mol компоненты в строке (включая в привязках)
-		const molMatches = line.match(/\$mol_\w+/g);
-		if (molMatches) {
-			for (const match of molMatches) {
-				data.molComponents.add(match);
-			}
-		}
-
-		// Ищем все $-компоненты в строке
-		const allComponentMatches = line.match(/\$\w+/g);
-		if (allComponentMatches) {
-			for (const match of allComponentMatches) {
-				if (!match.startsWith("$mol_")) {
-					data.components.add(match);
-				}
+		// Брать только первое слово из строк без отступа
+		if (!line.startsWith("\t") && !line.startsWith(" ") && trimmed.startsWith("$")) {
+			const firstWord = trimmed.split(/\s+/)[0];
+			if (firstWord.startsWith("$")) {
+				data.components.add(firstWord);
 			}
 		}
 
@@ -118,18 +97,41 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 }
 
 function parseTsFile(content: string, data: ProjectData) {
-	// Ищем $mol компоненты в TypeScript файлах
-	const molMatches = content.match(/\$mol_\w+/g);
-	if (molMatches) {
-		for (const match of molMatches) {
-			data.molComponents.add(match);
+	// Ищем все $ компоненты в TypeScript файлах
+	const componentMatches = content.match(/\$\w+/g);
+	if (componentMatches) {
+		for (const match of componentMatches) {
+			data.components.add(match);
 		}
 	}
 }
 
-function refreshProjectData() {
+async function refreshProjectData() {
 	console.log("[view.tree] Refreshing project data...");
-	projectDataPromise = scanProject();
+	projectData = await scanProject();
+}
+
+async function updateSingleFile(uri: vscode.Uri) {
+	console.log(`[view.tree] Updating single file: ${uri.path}`);
+	try {
+		const buffer = await vscode.workspace.fs.readFile(uri);
+		const content = buffer.toString();
+
+		if (uri.path.endsWith(".view.tree")) {
+			parseViewTreeFile(content, projectData);
+		} else if (uri.path.endsWith(".ts")) {
+			parseTsFile(content, projectData);
+		}
+	} catch (error) {
+		console.log(`[view.tree] Error updating file ${uri.path}:`, error);
+	}
+}
+
+async function removeSingleFile(uri: vscode.Uri) {
+	console.log(`[view.tree] File deleted: ${uri.path}`);
+	// При удалении файла делаем полный пересканирование
+	// так как сложно удалить только его данные
+	await refreshProjectData();
 }
 
 // Инициализируем сканирование
@@ -137,9 +139,9 @@ refreshProjectData();
 
 // Следим за изменениями файлов
 const fileWatcher = vscode.workspace.createFileSystemWatcher("**/*.{view.tree,ts}");
-fileWatcher.onDidChange(() => refreshProjectData());
-fileWatcher.onDidCreate(() => refreshProjectData());
-fileWatcher.onDidDelete(() => refreshProjectData());
+fileWatcher.onDidChange(updateSingleFile);
+fileWatcher.onDidCreate(updateSingleFile);
+fileWatcher.onDidDelete(removeSingleFile);
 
 const locationsForNode = {
 	root_class: async function (document: vscode.TextDocument, wordRange: vscode.Range) {
@@ -163,7 +165,11 @@ const locationsForNode = {
 			return [new vscode.Location(viewTreeUri, firstCharRange)];
 		}
 
-		const viewTreeUri2 = vscode.Uri.joinPath(mamUri(), [...parts, parts.at(-1)].join("/"), parts.at(-1) + ".view.tree");
+		const viewTreeUri2 = vscode.Uri.joinPath(
+			mamUri(),
+			[...parts, parts.at(-1)].join("/"),
+			parts.at(-1) + ".view.tree",
+		);
 		if (await fileExist(viewTreeUri2)) {
 			return [new vscode.Location(viewTreeUri2, firstCharRange)];
 		}
@@ -231,7 +237,9 @@ const locationsForNode = {
 
 		const locations: any = await vscode.commands.executeCommand("vscode.executeDefinitionProvider", dts, symbolPos);
 
-		return locations?.[0] ? [new vscode.Location(locations[0].targetUri, locations[0].targetSelectionRange.end)] : [];
+		return locations?.[0]
+			? [new vscode.Location(locations[0].targetUri, locations[0].targetSelectionRange.end)]
+			: [];
 	},
 };
 
@@ -307,14 +315,13 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 
 		const items: vscode.CompletionItem[] = [];
 		const completionContext = this.getCompletionContext(document, position, beforeCursor);
-		const projectData = await projectDataPromise;
 
 		switch (completionContext.type) {
 			case "component_name":
 				await this.addComponentCompletions(items, projectData);
 				break;
 			case "component_extends":
-				this.addMolComponentCompletions(items, projectData);
+				await this.addComponentCompletions(items, projectData);
 				break;
 			case "property_name":
 				this.addPropertyCompletions(items, projectData);
@@ -363,23 +370,11 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 	}
 
 	private async addComponentCompletions(items: vscode.CompletionItem[], projectData: ProjectData) {
-		console.log(
-			`[view.tree] Adding component completions: ${projectData.components.size} components, ${projectData.molComponents.size} mol components`,
-		);
-
-		// Добавляем $mol компоненты с приоритетом
-		for (const component of projectData.molComponents) {
-			const item = new vscode.CompletionItem(component, vscode.CompletionItemKind.Class);
-			item.detail = "$mol framework component";
-			item.insertText = component;
-			item.sortText = "0" + component;
-			items.push(item);
-		}
+		console.log(`[view.tree] Adding component completions: ${projectData.components.size} components`);
 
 		// Добавляем компоненты из проекта
 		for (const component of projectData.components) {
 			const item = new vscode.CompletionItem(component, vscode.CompletionItemKind.Class);
-			item.detail = "Project component";
 			item.insertText = component;
 			item.sortText = "1" + component;
 			items.push(item);
@@ -391,11 +386,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 			"$",
 		)) as vscode.SymbolInformation[];
 		for (const symbol of symbols.slice(0, 30)) {
-			if (
-				symbol.name.startsWith("$") &&
-				!projectData.components.has(symbol.name) &&
-				!projectData.molComponents.has(symbol.name)
-			) {
+			if (symbol.name.startsWith("$") && !projectData.components.has(symbol.name)) {
 				const item = new vscode.CompletionItem(symbol.name, vscode.CompletionItemKind.Class);
 				item.detail = symbol.containerName;
 				item.insertText = symbol.name;
@@ -405,16 +396,6 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 		}
 
 		console.log(`[view.tree] Added ${items.length} completion items`);
-	}
-
-	private addMolComponentCompletions(items: vscode.CompletionItem[], projectData: ProjectData) {
-		for (const component of projectData.molComponents) {
-			const item = new vscode.CompletionItem(component, vscode.CompletionItemKind.Class);
-			item.detail = "$mol framework component";
-			item.insertText = component;
-			item.sortText = "0" + component;
-			items.push(item);
-		}
 	}
 
 	private addPropertyCompletions(items: vscode.CompletionItem[], projectData: ProjectData) {
@@ -466,7 +447,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 			items.push(item);
 		}
 
-		this.addMolComponentCompletions(items, projectData);
+		this.addComponentCompletions(items, projectData);
 	}
 }
 
