@@ -331,7 +331,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 				await this.addComponentCompletions(items, projectData);
 				break;
 			case "property_name":
-				this.addPropertyCompletions(items, projectData, completionContext.currentComponent);
+				this.addPropertyCompletions(items, projectData, completionContext.currentComponent || null);
 				break;
 			case "property_binding":
 				this.addBindingCompletions(items);
@@ -350,22 +350,22 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 
 		// Если начинаем с $ в любом месте - это компонент
 		if (trimmed.startsWith("$")) {
-			return { type: "component_name", indentLevel };
+			return { type: "component_name", indentLevel, currentComponent: null };
 		}
 
 		// Если на нулевом уровне и нет пробела - это компонент
 		if (indentLevel === 0 && !trimmed.includes(" ")) {
-			return { type: "component_name", indentLevel };
+			return { type: "component_name", indentLevel, currentComponent: null };
 		}
 
 		// Если на нулевом уровне и есть пробел - это наследование
 		if (indentLevel === 0 && trimmed.includes(" ")) {
-			return { type: "component_extends", indentLevel };
+			return { type: "component_extends", indentLevel, currentComponent: null };
 		}
 
 		// Если есть операторы привязки
 		if (trimmed.includes("<=")) {
-			return { type: "property_binding", indentLevel };
+			return { type: "property_binding", indentLevel, currentComponent: null };
 		}
 
 		// Если с отступом - это свойство
@@ -374,7 +374,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 			return { type: "property_name", indentLevel, currentComponent };
 		}
 
-		return { type: "value", indentLevel };
+		return { type: "value", indentLevel, currentComponent: null };
 	}
 
 	private getCurrentComponent(document: vscode.TextDocument, position: vscode.Position): string | null {
