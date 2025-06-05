@@ -166,32 +166,29 @@ class CompletionProvider implements vscode.CompletionItemProvider {
   async provideCompletionItems(
     document: vscode.TextDocument,
     position: vscode.Position,
-    token: vscode.CancellationToken,
-    context: vscode.CompletionContext,
   ): Promise<vscode.CompletionItem[]> {
     const line = document.lineAt(position);
     const lineText = line.text;
     const beforeCursor = lineText.substring(0, position.character);
-    const afterCursor = lineText.substring(position.character);
 
     const items: vscode.CompletionItem[] = [];
     const completionContext = this.getCompletionContext(document, position, beforeCursor);
 
     switch (completionContext.type) {
       case "component_name":
-        await this.addComponentCompletions(items, completionContext);
+        await this.addComponentCompletions(items);
         break;
       case "component_extends":
         await this.addMolComponentCompletions(items);
         break;
       case "property_name":
-        await this.addPropertyCompletions(items, completionContext);
+        await this.addPropertyCompletions(items);
         break;
       case "property_binding":
         this.addBindingCompletions(items);
         break;
       case "value":
-        await this.addValueCompletions(items, completionContext);
+        await this.addValueCompletions(items);
         break;
     }
 
@@ -225,7 +222,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
     return { type: "value", indentLevel };
   }
 
-  private async addComponentCompletions(items: vscode.CompletionItem[], context: any) {
+  private async addComponentCompletions(items: vscode.CompletionItem[]) {
     const symbols = (await vscode.commands.executeCommand(
       "vscode.executeWorkspaceSymbolProvider",
       "$",
@@ -285,7 +282,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
     }
   }
 
-  private async addPropertyCompletions(items: vscode.CompletionItem[], context: any) {
+  private async addPropertyCompletions(items: vscode.CompletionItem[]) {
     const commonProps = [
       "sub",
       "title",
@@ -354,7 +351,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
     }
   }
 
-  private async addValueCompletions(items: vscode.CompletionItem[], context: any) {
+  private async addValueCompletions(items: vscode.CompletionItem[]) {
     const specialValues = [
       { text: "null", detail: "Null value" },
       { text: "true", detail: "Boolean true" },
