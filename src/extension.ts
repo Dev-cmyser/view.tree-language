@@ -2,6 +2,97 @@ import * as vscode from "vscode";
 import { SourceMapConsumer } from "source-map-js";
 import { createViewCssTs, createViewTs, newModuleTs, newModuleViewTree } from "./commands";
 
+interface ProjectData {
+  components: Set<string>;
+  properties: Set<string>;
+  molComponents: Set<string>;
+}
+
+let projectDataPromise: Thenable<ProjectData>;
+
+async function scanProject(): Promise<ProjectData> {
+  const data: ProjectData = {
+    components: new Set(),
+    properties: new Set(),
+    molComponents: new Set(),
+  };
+
+  // Сканируем .view.tree файлы
+  const viewTreeFiles = await vscode.workspace.findFiles("**/*.view.tree");
+  for (const file of viewTreeFiles) {
+    try {
+      const buffer = await vscode.workspace.fs.readFile(file);
+      const content = buffer.toString();
+      parseViewTreeFile(content, data);
+    } catch (error) {
+      // Игнорируем ошибки чтения файлов
+    }
+  }
+
+  // Сканируем .ts файлы для поиска $mol компонентов
+  const tsFiles = await vscode.workspace.findFiles("**/*.ts");
+  for (const file of tsFiles) {
+    try {
+      const buffer = await vscode.workspace.fs.readFile(file);
+      const content = buffer.toString();
+      parseTsFile(content, data);
+    } catch (error) {
+      // Игнорируем ошибки чтения файлов
+    }
+  }
+
+  return data;
+}
+
+function parseViewTreeFile(content: string, data: ProjectData) {
+  const lines = content.split("\n");
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Ищем определения компонентов: $my_component $mol_view
+    const componentMatch = trimmed.match(/^(\$\w+)\s+(\$\w+)/);
+    if (componentMatch) {
+      data.components.add(componentMatch[1]);
+      if (componentMatch[2].startsWith("$mol_")) {
+        data.molComponents.add(componentMatch[2]);
+      }
+    }
+
+    // Ищем свойства (строки с отступом без <= и <=>)
+    const indentMatch = line.match(/^(\s+)([a-zA-Z_][a-zA-Z0-9_?*]*)\s*/);
+    if (indentMatch && indentMatch[1].length > 0 && !trimmed.includes("<=")) {
+      const property = indentMatch[2];
+      if (!property.startsWith("$")) {
+        data.properties.add(property);
+      }
+    }
+  }
+}
+
+function parseTsFile(content: string, data: ProjectData) {
+  // Ищем $mol компоненты в TypeScript файлах
+  const molMatches = content.match(/\$mol_\w+/g);
+  if (molMatches) {
+    for (const match of molMatches) {
+      data.molComponents.add(match);
+    }
+  }
+}
+
+function refreshProjectData() {
+  projectDataPromise = scanProject();
+}
+
+// Инициализируем сканирование
+refreshProjectData();
+
+// Следим за изменениями файлов
+const fileWatcher = vscode.workspace.createFileSystemWatcher("**/*.{view.tree,ts}");
+fileWatcher.onDidChange(() => refreshProjectData());
+fileWatcher.onDidCreate(() => refreshProjectData());
+fileWatcher.onDidDelete(() => refreshProjectData());
+
 const locationsForNode = {
   root_class: async function (document: vscode.TextDocument, wordRange: vscode.Range) {
     const viewTsUri = vscode.Uri.file(document.uri.path.replace(/.tree$/, ".ts"));
@@ -106,11 +197,6 @@ function getNodeType(document: vscode.TextDocument, wordRange: vscode.Range) {
   const firstChar = document.getText(new vscode.Range(wordRange.start.translate(0, -1), wordRange.start));
   if (firstChar == "$") return "class";
 
-  // const rightNodeChar = document.getText( new vscode.Range( wordRange.end.translate(0, 1), wordRange.end.translate(0, 2) ) )
-  // if( rightNodeChar == '$' ) return 'comp'
-  // const rightNodeCharAfterAsterisk = document.getText( new vscode.Range( wordRange.end.translate(0, 2), wordRange.end.translate(0, 3) ) )
-  // if( rightNodeCharAfterAsterisk == '$' ) return 'comp'
-
   if (wordRange.start.character == 1) return "prop";
   const leftNodeChar = document.getText(
     new vscode.Range(wordRange.start.translate(0, -2), wordRange.start.translate(0, -1)),
@@ -173,22 +259,23 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 
     const items: vscode.CompletionItem[] = [];
     const completionContext = this.getCompletionContext(document, position, beforeCursor);
+    const projectData = await projectDataPromise;
 
     switch (completionContext.type) {
       case "component_name":
-        await this.addComponentCompletions(items);
+        await this.addComponentCompletions(items, projectData);
         break;
       case "component_extends":
-        await this.addMolComponentCompletions(items);
+        this.addMolComponentCompletions(items, projectData);
         break;
       case "property_name":
-        await this.addPropertyCompletions(items);
+        this.addPropertyCompletions(items, projectData);
         break;
       case "property_binding":
         this.addBindingCompletions(items);
         break;
       case "value":
-        await this.addValueCompletions(items);
+        this.addValueCompletions(items, projectData);
         break;
     }
 
@@ -222,58 +309,32 @@ class CompletionProvider implements vscode.CompletionItemProvider {
     return { type: "value", indentLevel };
   }
 
-  private async addComponentCompletions(items: vscode.CompletionItem[]) {
+  private async addComponentCompletions(items: vscode.CompletionItem[], projectData: ProjectData) {
+    for (const component of projectData.components) {
+      const item = new vscode.CompletionItem(component, vscode.CompletionItemKind.Class);
+      item.detail = "Project component";
+      item.insertText = component;
+      item.sortText = "1" + component;
+      items.push(item);
+    }
+
     const symbols = (await vscode.commands.executeCommand(
       "vscode.executeWorkspaceSymbolProvider",
       "$",
     )) as vscode.SymbolInformation[];
     for (const symbol of symbols.slice(0, 30)) {
-      if (symbol.name.startsWith("$")) {
+      if (symbol.name.startsWith("$") && !projectData.components.has(symbol.name)) {
         const item = new vscode.CompletionItem(symbol.name, vscode.CompletionItemKind.Class);
         item.detail = symbol.containerName;
         item.insertText = symbol.name;
+        item.sortText = "2" + symbol.name;
         items.push(item);
       }
     }
   }
 
-  private async addMolComponentCompletions(items: vscode.CompletionItem[]) {
-    const molComponents = [
-      "$mol_view",
-      "$mol_page",
-      "$mol_button",
-      "$mol_button_major",
-      "$mol_button_minor",
-      "$mol_list",
-      "$mol_grid",
-      "$mol_deck",
-      "$mol_form",
-      "$mol_string",
-      "$mol_number",
-      "$mol_textarea",
-      "$mol_select",
-      "$mol_check",
-      "$mol_switch",
-      "$mol_calendar",
-      "$mol_chat",
-      "$mol_bar",
-      "$mol_panel",
-      "$mol_card",
-      "$mol_link",
-      "$mol_image",
-      "$mol_icon",
-      "$mol_labeler",
-      "$mol_row",
-      "$mol_section",
-      "$mol_dimmer",
-      "$mol_scroll",
-      "$mol_tiler",
-      "$mol_book",
-      "$mol_book2",
-      "$mol_book2_catalog",
-    ];
-
-    for (const component of molComponents) {
+  private addMolComponentCompletions(items: vscode.CompletionItem[], projectData: ProjectData) {
+    for (const component of projectData.molComponents) {
       const item = new vscode.CompletionItem(component, vscode.CompletionItemKind.Class);
       item.detail = "$mol framework component";
       item.insertText = component;
@@ -282,57 +343,20 @@ class CompletionProvider implements vscode.CompletionItemProvider {
     }
   }
 
-  private async addPropertyCompletions(items: vscode.CompletionItem[]) {
-    const commonProps = [
-      "sub",
-      "title",
-      "content",
-      "body",
-      "head",
-      "foot",
-      "tools",
-      "minimal",
-      "value?",
-      "hint",
-      "click?",
-      "enabled",
-      "visible",
-      "selected?",
-      "dom_name",
-      "dom_class",
-      "attr",
-      "style",
-      "field",
-      "rows",
-      "cols",
-      "options",
-      "dict",
-      "uri",
-      "uri_base",
-      "plugins",
-      "theme",
-      "locale",
-    ];
-
-    for (const prop of commonProps) {
-      const item = new vscode.CompletionItem(prop, vscode.CompletionItemKind.Property);
-      item.detail = "view.tree property";
-      item.insertText = prop;
+  private addPropertyCompletions(items: vscode.CompletionItem[], projectData: ProjectData) {
+    for (const property of projectData.properties) {
+      const item = new vscode.CompletionItem(property, vscode.CompletionItemKind.Property);
+      item.detail = "Project property";
+      item.insertText = property;
+      item.sortText = "1" + property;
       items.push(item);
     }
 
     const listItem = new vscode.CompletionItem("/", vscode.CompletionItemKind.Operator);
     listItem.detail = "Empty list";
     listItem.insertText = "/";
+    listItem.sortText = "0/";
     items.push(listItem);
-
-    const multiProps = ["sub*", "Row*", "Col*", "Tool*", "Option*"];
-    for (const prop of multiProps) {
-      const item = new vscode.CompletionItem(prop, vscode.CompletionItemKind.Property);
-      item.detail = "Multi-property";
-      item.insertText = prop;
-      items.push(item);
-    }
   }
 
   private addBindingCompletions(items: vscode.CompletionItem[]) {
@@ -351,7 +375,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
     }
   }
 
-  private async addValueCompletions(items: vscode.CompletionItem[]) {
+  private addValueCompletions(items: vscode.CompletionItem[], projectData: ProjectData) {
     const specialValues = [
       { text: "null", detail: "Null value" },
       { text: "true", detail: "Boolean true" },
@@ -368,7 +392,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
       items.push(item);
     }
 
-    await this.addMolComponentCompletions(items);
+    this.addMolComponentCompletions(items, projectData);
   }
 }
 
