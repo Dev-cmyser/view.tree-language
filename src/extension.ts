@@ -4,18 +4,18 @@ import { createViewCssTs, createViewTs, newModuleTs, newModuleViewTree } from ".
 
 interface ProjectData {
 	components: Set<string>;
-	properties: Set<string>;
+	componentProperties: Map<string, Set<string>>;
 }
 
 let projectData: ProjectData = {
 	components: new Set(),
-	properties: new Set(),
+	componentProperties: new Map(),
 };
 
 async function scanProject(): Promise<ProjectData> {
 	const data: ProjectData = {
 		components: new Set(),
-		properties: new Set(),
+		componentProperties: new Map(),
 	};
 
 	console.log("[view.tree] Starting project scan...");
@@ -56,7 +56,7 @@ async function scanProject(): Promise<ProjectData> {
 		}
 	}
 
-	console.log(`[view.tree] Scan complete: ${data.components.size} components, ${data.properties.size} properties`);
+	console.log(`[view.tree] Scan complete: ${data.components.size} components, ${data.componentProperties.size} components with properties`);
 	console.log("[view.tree] Components found:", Array.from(data.components));
 
 	return data;
@@ -64,6 +64,7 @@ async function scanProject(): Promise<ProjectData> {
 
 function parseViewTreeFile(content: string, data: ProjectData) {
 	const lines = content.split("\n");
+	let currentComponent: string | null = null;
 
 	for (const line of lines) {
 		const trimmed = line.trim();
@@ -72,25 +73,31 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 		if (!line.startsWith("\t") && !line.startsWith(" ") && trimmed.startsWith("$")) {
 			const firstWord = trimmed.split(/\s+/)[0];
 			if (firstWord.startsWith("$")) {
+				currentComponent = firstWord;
 				data.components.add(firstWord);
+				if (!data.componentProperties.has(firstWord)) {
+					data.componentProperties.set(firstWord, new Set());
+				}
 			}
 		}
 
 		// Ищем свойства (строки с отступом без <= и <=>)
-		const indentMatch = line.match(/^(\s+)([a-zA-Z_][a-zA-Z0-9_?*]*)\s*/);
-		if (indentMatch && indentMatch[1].length > 0 && !trimmed.includes("<=") && !trimmed.includes("<=>")) {
-			const property = indentMatch[2];
-			if (!property.startsWith("$") && property !== "null" && property !== "true" && property !== "false") {
-				data.properties.add(property);
+		if (currentComponent) {
+			const indentMatch = line.match(/^(\s+)([a-zA-Z_][a-zA-Z0-9_?*]*)\s*/);
+			if (indentMatch && indentMatch[1].length > 0 && !trimmed.includes("<=") && !trimmed.includes("<=>")) {
+				const property = indentMatch[2];
+				if (!property.startsWith("$") && property !== "null" && property !== "true" && property !== "false") {
+					data.componentProperties.get(currentComponent)!.add(property);
+				}
 			}
-		}
 
-		// Ищем свойства в привязках: <= PropertyName
-		const bindingMatch = trimmed.match(/<=\s+([a-zA-Z_][a-zA-Z0-9_?*]*)/);
-		if (bindingMatch) {
-			const property = bindingMatch[1];
-			if (!property.startsWith("$")) {
-				data.properties.add(property);
+			// Ищем свойства в привязках: <= PropertyName
+			const bindingMatch = trimmed.match(/<=\s+([a-zA-Z_][a-zA-Z0-9_?*]*)/);
+			if (bindingMatch) {
+				const property = bindingMatch[1];
+				if (!property.startsWith("$")) {
+					data.componentProperties.get(currentComponent)!.add(property);
+				}
 			}
 		}
 	}
@@ -324,7 +331,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 				await this.addComponentCompletions(items, projectData);
 				break;
 			case "property_name":
-				this.addPropertyCompletions(items, projectData);
+				this.addPropertyCompletions(items, projectData, completionContext.currentComponent);
 				break;
 			case "property_binding":
 				this.addBindingCompletions(items);
@@ -363,10 +370,28 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 
 		// Если с отступом - это свойство
 		if (indentLevel > 0) {
-			return { type: "property_name", indentLevel };
+			const currentComponent = this.getCurrentComponent(document, position);
+			return { type: "property_name", indentLevel, currentComponent };
 		}
 
 		return { type: "value", indentLevel };
+	}
+
+	private getCurrentComponent(document: vscode.TextDocument, position: vscode.Position): string | null {
+		// Ищем компонент, к которому относится текущая позиция
+		for (let i = position.line; i >= 0; i--) {
+			const line = document.lineAt(i);
+			const text = line.text;
+			
+			// Если строка без отступа и начинается с $
+			if (!text.startsWith('\t') && !text.startsWith(' ') && text.trim().startsWith('$')) {
+				const firstWord = text.trim().split(/\s+/)[0];
+				if (firstWord.startsWith('$')) {
+					return firstWord;
+				}
+			}
+		}
+		return null;
 	}
 
 	private async addComponentCompletions(items: vscode.CompletionItem[], projectData: ProjectData) {
@@ -398,13 +423,34 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 		console.log(`[view.tree] Added ${items.length} completion items`);
 	}
 
-	private addPropertyCompletions(items: vscode.CompletionItem[], projectData: ProjectData) {
-		for (const property of projectData.properties) {
-			const item = new vscode.CompletionItem(property, vscode.CompletionItemKind.Property);
-			item.detail = "Project property";
-			item.insertText = property;
-			item.sortText = "1" + property;
-			items.push(item);
+	private addPropertyCompletions(items: vscode.CompletionItem[], projectData: ProjectData, currentComponent: string | null) {
+		// Добавляем свойства текущего компонента
+		if (currentComponent && projectData.componentProperties.has(currentComponent)) {
+			const properties = projectData.componentProperties.get(currentComponent)!;
+			for (const property of properties) {
+				const item = new vscode.CompletionItem(property, vscode.CompletionItemKind.Property);
+				item.detail = `Property of ${currentComponent}`;
+				item.insertText = property;
+				item.sortText = "1" + property;
+				items.push(item);
+			}
+		}
+
+		// Добавляем общие свойства если компонент не найден
+		if (!currentComponent) {
+			const allProperties = new Set<string>();
+			for (const properties of projectData.componentProperties.values()) {
+				for (const property of properties) {
+					allProperties.add(property);
+				}
+			}
+			for (const property of allProperties) {
+				const item = new vscode.CompletionItem(property, vscode.CompletionItemKind.Property);
+				item.detail = "Property";
+				item.insertText = property;
+				item.sortText = "2" + property;
+				items.push(item);
+			}
 		}
 
 		const listItem = new vscode.CompletionItem("/", vscode.CompletionItemKind.Operator);
