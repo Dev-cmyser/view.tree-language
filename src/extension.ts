@@ -169,43 +169,209 @@ class CompletionProvider implements vscode.CompletionItemProvider {
     token: vscode.CancellationToken,
     context: vscode.CompletionContext,
   ): Promise<vscode.CompletionItem[]> {
-    const range = document.getWordRangeAtPosition(position);
-    const nodeType = range ? getNodeType(document, range) : "prop";
+    const line = document.lineAt(position);
+    const lineText = line.text;
+    const beforeCursor = lineText.substring(0, position.character);
+    const afterCursor = lineText.substring(position.character);
 
     const items: vscode.CompletionItem[] = [];
+    const completionContext = this.getCompletionContext(document, position, beforeCursor);
 
-    // Базовые предложения на основе контекста
-    switch (nodeType) {
-      case "root_class":
-      case "class":
-        // Предлагаем классы из workspace
-        const symbols = (await vscode.commands.executeCommand(
-          "vscode.executeWorkspaceSymbolProvider",
-          "$",
-        )) as vscode.SymbolInformation[];
-        for (const symbol of symbols.slice(0, 50)) {
-          // Ограничиваем количество
-          if (symbol.name.startsWith("$")) {
-            const item = new vscode.CompletionItem(symbol.name.slice(1), vscode.CompletionItemKind.Class);
-            item.detail = symbol.containerName;
-            item.insertText = symbol.name.slice(1);
-            items.push(item);
-          }
-        }
+    switch (completionContext.type) {
+      case "component_name":
+        await this.addComponentCompletions(items, completionContext);
         break;
-
-      case "prop":
-        // Предлагаем общие свойства
-        const commonProps = ["sub", "title", "content", "enabled", "visible", "dom_name", "dom_class", "attr"];
-        for (const prop of commonProps) {
-          const item = new vscode.CompletionItem(prop, vscode.CompletionItemKind.Property);
-          item.insertText = prop;
-          items.push(item);
-        }
+      case "component_extends":
+        await this.addMolComponentCompletions(items);
+        break;
+      case "property_name":
+        await this.addPropertyCompletions(items, completionContext);
+        break;
+      case "property_binding":
+        this.addBindingCompletions(items);
+        break;
+      case "value":
+        await this.addValueCompletions(items, completionContext);
         break;
     }
 
     return items;
+  }
+
+  private getCompletionContext(document: vscode.TextDocument, position: vscode.Position, beforeCursor: string) {
+    const trimmed = beforeCursor.trim();
+    const indentLevel = beforeCursor.length - beforeCursor.trimStart().length;
+
+    if (indentLevel === 0 && trimmed.startsWith("$")) {
+      return { type: "component_name", indentLevel };
+    }
+
+    if (indentLevel === 0 && !trimmed.includes(" ")) {
+      return { type: "component_name", indentLevel };
+    }
+
+    if (indentLevel === 0 && trimmed.includes(" ") && !trimmed.includes("$")) {
+      return { type: "component_extends", indentLevel };
+    }
+
+    if (trimmed.startsWith("<=") || trimmed.includes("<=")) {
+      return { type: "property_binding", indentLevel };
+    }
+
+    if (indentLevel > 0 && !trimmed.includes("<=") && !trimmed.includes("<=>")) {
+      return { type: "property_name", indentLevel };
+    }
+
+    return { type: "value", indentLevel };
+  }
+
+  private async addComponentCompletions(items: vscode.CompletionItem[], context: any) {
+    const symbols = (await vscode.commands.executeCommand(
+      "vscode.executeWorkspaceSymbolProvider",
+      "$",
+    )) as vscode.SymbolInformation[];
+    for (const symbol of symbols.slice(0, 30)) {
+      if (symbol.name.startsWith("$")) {
+        const item = new vscode.CompletionItem(symbol.name, vscode.CompletionItemKind.Class);
+        item.detail = symbol.containerName;
+        item.insertText = symbol.name;
+        items.push(item);
+      }
+    }
+  }
+
+  private async addMolComponentCompletions(items: vscode.CompletionItem[]) {
+    const molComponents = [
+      "$mol_view",
+      "$mol_page",
+      "$mol_button",
+      "$mol_button_major",
+      "$mol_button_minor",
+      "$mol_list",
+      "$mol_grid",
+      "$mol_deck",
+      "$mol_form",
+      "$mol_string",
+      "$mol_number",
+      "$mol_textarea",
+      "$mol_select",
+      "$mol_check",
+      "$mol_switch",
+      "$mol_calendar",
+      "$mol_chat",
+      "$mol_bar",
+      "$mol_panel",
+      "$mol_card",
+      "$mol_link",
+      "$mol_image",
+      "$mol_icon",
+      "$mol_labeler",
+      "$mol_row",
+      "$mol_section",
+      "$mol_dimmer",
+      "$mol_scroll",
+      "$mol_tiler",
+      "$mol_book",
+      "$mol_book2",
+      "$mol_book2_catalog",
+    ];
+
+    for (const component of molComponents) {
+      const item = new vscode.CompletionItem(component, vscode.CompletionItemKind.Class);
+      item.detail = "$mol framework component";
+      item.insertText = component;
+      item.sortText = "0" + component;
+      items.push(item);
+    }
+  }
+
+  private async addPropertyCompletions(items: vscode.CompletionItem[], context: any) {
+    const commonProps = [
+      "sub",
+      "title",
+      "content",
+      "body",
+      "head",
+      "foot",
+      "tools",
+      "minimal",
+      "value?",
+      "hint",
+      "click?",
+      "enabled",
+      "visible",
+      "selected?",
+      "dom_name",
+      "dom_class",
+      "attr",
+      "style",
+      "field",
+      "rows",
+      "cols",
+      "options",
+      "dict",
+      "uri",
+      "uri_base",
+      "plugins",
+      "theme",
+      "locale",
+    ];
+
+    for (const prop of commonProps) {
+      const item = new vscode.CompletionItem(prop, vscode.CompletionItemKind.Property);
+      item.detail = "view.tree property";
+      item.insertText = prop;
+      items.push(item);
+    }
+
+    const listItem = new vscode.CompletionItem("/", vscode.CompletionItemKind.Operator);
+    listItem.detail = "Empty list";
+    listItem.insertText = "/";
+    items.push(listItem);
+
+    const multiProps = ["sub*", "Row*", "Col*", "Tool*", "Option*"];
+    for (const prop of multiProps) {
+      const item = new vscode.CompletionItem(prop, vscode.CompletionItemKind.Property);
+      item.detail = "Multi-property";
+      item.insertText = prop;
+      items.push(item);
+    }
+  }
+
+  private addBindingCompletions(items: vscode.CompletionItem[]) {
+    const operators = [
+      { text: "<=", detail: "One-way binding" },
+      { text: "<=>", detail: "Two-way binding" },
+      { text: "^", detail: "Override" },
+      { text: "*", detail: "Multi-property marker" },
+    ];
+
+    for (const op of operators) {
+      const item = new vscode.CompletionItem(op.text, vscode.CompletionItemKind.Operator);
+      item.detail = op.detail;
+      item.insertText = op.text;
+      items.push(item);
+    }
+  }
+
+  private async addValueCompletions(items: vscode.CompletionItem[], context: any) {
+    const specialValues = [
+      { text: "null", detail: "Null value" },
+      { text: "true", detail: "Boolean true" },
+      { text: "false", detail: "Boolean false" },
+      { text: "\\", detail: "String literal", insertText: "\\\n\t\\" },
+      { text: "@\\", detail: "Localized string", insertText: "@\\\n\t\\" },
+      { text: "*", detail: "Dictionary marker" },
+    ];
+
+    for (const value of specialValues) {
+      const item = new vscode.CompletionItem(value.text, vscode.CompletionItemKind.Value);
+      item.detail = value.detail;
+      item.insertText = value.insertText || value.text;
+      items.push(item);
+    }
+
+    await this.addMolComponentCompletions(items);
   }
 }
 
