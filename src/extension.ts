@@ -331,23 +331,28 @@ class CompletionProvider implements vscode.CompletionItemProvider {
     const trimmed = beforeCursor.trim();
     const indentLevel = beforeCursor.length - beforeCursor.trimStart().length;
 
-    if (indentLevel === 0 && trimmed.startsWith("$")) {
+    // Если начинаем с $ в любом месте - это компонент
+    if (trimmed.startsWith("$")) {
       return { type: "component_name", indentLevel };
     }
 
+    // Если на нулевом уровне и нет пробела - это компонент
     if (indentLevel === 0 && !trimmed.includes(" ")) {
       return { type: "component_name", indentLevel };
     }
 
-    if (indentLevel === 0 && trimmed.includes(" ") && !trimmed.includes("$")) {
+    // Если на нулевом уровне и есть пробел - это наследование
+    if (indentLevel === 0 && trimmed.includes(" ")) {
       return { type: "component_extends", indentLevel };
     }
 
-    if (trimmed.startsWith("<=") || trimmed.includes("<=")) {
+    // Если есть операторы привязки
+    if (trimmed.includes("<=")) {
       return { type: "property_binding", indentLevel };
     }
 
-    if (indentLevel > 0 && !trimmed.includes("<=") && !trimmed.includes("<=>")) {
+    // Если с отступом - это свойство
+    if (indentLevel > 0) {
       return { type: "property_name", indentLevel };
     }
 
@@ -467,6 +472,8 @@ export function activate(context: vscode.ExtensionContext) {
       completionProvider,
       "$",
       "_",
+      " ",
+      "\t",
     ),
     newModuleTs,
     newModuleViewTree,
