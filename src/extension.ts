@@ -70,7 +70,7 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 		const trimmed = line.trim();
 
 		// Брать только первое слово из строк без отступа
-		if (!line.startsWith("\t") && !line.startsWith(" ") && trimmed.startsWith("$")) {
+		if (!line.startsWith("\t") && trimmed.startsWith("$")) {
 			const firstWord = trimmed.split(/\s+/)[0];
 			if (firstWord.startsWith("$")) {
 				currentComponent = firstWord;
@@ -83,7 +83,7 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 
 		// Ищем свойства (строки с отступом без <= и <=>)
 		if (currentComponent) {
-			const indentMatch = line.match(/^(\s+)([a-zA-Z_][a-zA-Z0-9_?*]*)\s*/);
+			const indentMatch = line.match(/^(\t+)([a-zA-Z_][a-zA-Z0-9_?*]*)\s*/);
 			if (indentMatch && indentMatch[1].length > 0 && !trimmed.includes("<=") && !trimmed.includes("<=>")) {
 				const property = indentMatch[2];
 				if (!property.startsWith("$") && property !== "null" && property !== "true" && property !== "false") {
@@ -346,7 +346,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 
 	private getCompletionContext(document: vscode.TextDocument, position: vscode.Position, beforeCursor: string) {
 		const trimmed = beforeCursor.trim();
-		const indentLevel = beforeCursor.length - beforeCursor.trimStart().length;
+		const indentLevel = beforeCursor.length - beforeCursor.replace(/^\t*/, '').length;
 
 		// Если начинаем с $ в любом месте - это компонент
 		if (trimmed.startsWith("$")) {
@@ -384,7 +384,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 			const text = line.text;
 			
 			// Если строка без отступа и начинается с $
-			if (!text.startsWith('\t') && !text.startsWith(' ') && text.trim().startsWith('$')) {
+			if (!text.startsWith('\t') && text.trim().startsWith('$')) {
 				const firstWord = text.trim().split(/\s+/)[0];
 				if (firstWord.startsWith('$')) {
 					return firstWord;
