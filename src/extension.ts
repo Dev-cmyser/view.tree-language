@@ -5,17 +5,20 @@ import { createViewCssTs, createViewTs, newModuleTs, newModuleViewTree } from ".
 interface ProjectData {
 	components: Set<string>;
 	componentProperties: Map<string, Set<string>>;
+	componentBaseClasses: Map<string, string>;
 }
 
 let projectData: ProjectData = {
 	components: new Set(),
 	componentProperties: new Map(),
+	componentBaseClasses: new Map(),
 };
 
 async function scanProject(): Promise<ProjectData> {
 	const data: ProjectData = {
 		components: new Set(),
 		componentProperties: new Map(),
+		componentBaseClasses: new Map(),
 	};
 
 	console.log("[view.tree] Starting project scan...");
@@ -56,6 +59,9 @@ async function scanProject(): Promise<ProjectData> {
 		}
 	}
 
+	// Объединяем свойства с базовыми классами
+	mergePropertiesWithBaseClasses(data);
+
 	console.log(`[view.tree] Scan complete: ${data.components.size} components, ${data.componentProperties.size} components with properties`);
 	console.log("[view.tree] Components found:", Array.from(data.components));
 
@@ -71,32 +77,60 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 
 		// Брать только первое слово из строк без отступа
 		if (!line.startsWith("\t") && trimmed.startsWith("$")) {
-			const firstWord = trimmed.split(/\s+/)[0];
+			const words = trimmed.split(/\s+/);
+			const firstWord = words[0];
 			if (firstWord.startsWith("$")) {
 				currentComponent = firstWord;
 				data.components.add(firstWord);
 				if (!data.componentProperties.has(firstWord)) {
 					data.componentProperties.set(firstWord, new Set());
 				}
+				
+				// Парсим базовый класс (второе слово, если есть)
+				if (words.length > 1 && words[1].startsWith("$")) {
+					data.componentBaseClasses.set(firstWord, words[1]);
+				}
 			}
 		}
 
-		// Ищем свойства (строки с отступом без <= и <=>)
+		// Ищем свойства компонента
 		if (currentComponent) {
-			const indentMatch = line.match(/^(\t+)([a-zA-Z_][a-zA-Z0-9_?*]*)\s*/);
-			if (indentMatch && indentMatch[1].length > 0 && !trimmed.includes("<=") && !trimmed.includes("<=>")) {
-				const property = indentMatch[2];
-				if (!property.startsWith("$") && property !== "null" && property !== "true" && property !== "false") {
-					data.componentProperties.get(currentComponent)!.add(property);
-				}
-			}
+			// Проверяем узлы на первом уровне отступа (один таб)
+			const firstLevelMatch = line.match(/^\t([a-zA-Z_][a-zA-Z0-9_?*]*)/);
+			if (firstLevelMatch) {
+				let hasBinding = false;
+				let propertyToAdd: string | null = null;
 
-			// Ищем свойства в привязках: <= PropertyName
-			const bindingMatch = trimmed.match(/<=\s+([a-zA-Z_][a-zA-Z0-9_?*]*)/);
-			if (bindingMatch) {
-				const property = bindingMatch[1];
-				if (!property.startsWith("$")) {
-					data.componentProperties.get(currentComponent)!.add(property);
+				// Проверяем биндинги <=, <=>, => и берем ЛЕВУЮ часть
+				const bindingMatches = [
+					line.match(/^\t+([a-zA-Z_][a-zA-Z0-9_?*]*)\s*<=/),
+					line.match(/^\t+([a-zA-Z_][a-zA-Z0-9_?*]*)\s*<==>/),
+					line.match(/^\t+([a-zA-Z_][a-zA-Z0-9_?*]*)\s*=>/)
+				];
+
+				// Если есть биндинг - добавляем левую часть (имя свойства)
+				for (const bindingMatch of bindingMatches) {
+					if (bindingMatch) {
+						hasBinding = true;
+						const property = bindingMatch[1];
+						if (!property.startsWith("$")) {
+							propertyToAdd = property;
+							break;
+						}
+					}
+				}
+
+				// Если нет биндинга - добавляем сам узел как свойство
+				if (!hasBinding) {
+					const property = firstLevelMatch[1];
+					if (!property.startsWith("$") && property !== "null" && property !== "true" && property !== "false") {
+						propertyToAdd = property;
+					}
+				}
+
+				// Добавляем свойство
+				if (propertyToAdd) {
+					data.componentProperties.get(currentComponent)!.add(propertyToAdd);
 				}
 			}
 		}
@@ -109,6 +143,37 @@ function parseTsFile(content: string, data: ProjectData) {
 	if (componentMatches) {
 		for (const match of componentMatches) {
 			data.components.add(match);
+		}
+	}
+}
+
+function mergePropertiesWithBaseClasses(data: ProjectData) {
+	// Рекурсивная функция для получения всех свойств компонента с учетом наследования
+	function getAllProperties(componentName: string, visited = new Set<string>()): Set<string> {
+		if (visited.has(componentName)) {
+			return new Set(); // Избегаем циклических зависимостей
+		}
+		
+		visited.add(componentName);
+		const properties = new Set(data.componentProperties.get(componentName) || []);
+		
+		// Добавляем свойства базового класса
+		const baseClass = data.componentBaseClasses.get(componentName);
+		if (baseClass && data.componentProperties.has(baseClass)) {
+			const baseProperties = getAllProperties(baseClass, visited);
+			for (const prop of baseProperties) {
+				properties.add(prop);
+			}
+		}
+		
+		return properties;
+	}
+
+	// Обновляем свойства всех компонентов
+	for (const componentName of data.components) {
+		if (data.componentProperties.has(componentName)) {
+			const allProperties = getAllProperties(componentName);
+			data.componentProperties.set(componentName, allProperties);
 		}
 	}
 }
