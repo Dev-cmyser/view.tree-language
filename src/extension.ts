@@ -62,7 +62,9 @@ async function scanProject(): Promise<ProjectData> {
 	// Объединяем свойства с базовыми классами
 	mergePropertiesWithBaseClasses(data);
 
-	console.log(`[view.tree] Scan complete: ${data.components.size} components, ${data.componentProperties.size} components with properties`);
+	console.log(
+		`[view.tree] Scan complete: ${data.components.size} components, ${data.componentProperties.size} components with properties`,
+	);
 	console.log("[view.tree] Components found:", Array.from(data.components));
 
 	return data;
@@ -85,7 +87,7 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 				if (!data.componentProperties.has(firstWord)) {
 					data.componentProperties.set(firstWord, new Set());
 				}
-				
+
 				// Парсим базовый класс (второе слово, если есть)
 				if (words.length > 1 && words[1].startsWith("$")) {
 					data.componentBaseClasses.set(firstWord, words[1]);
@@ -105,7 +107,7 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 				const bindingMatches = [
 					line.match(/^\t+([a-zA-Z_][a-zA-Z0-9_?*]*)\s*<=/),
 					line.match(/^\t+([a-zA-Z_][a-zA-Z0-9_?*]*)\s*<==>/),
-					line.match(/^\t+([a-zA-Z_][a-zA-Z0-9_?*]*)\s*=>/)
+					line.match(/^\t+([a-zA-Z_][a-zA-Z0-9_?*]*)\s*=>/),
 				];
 
 				// Если есть биндинг - добавляем левую часть (имя свойства)
@@ -123,7 +125,12 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 				// Если нет биндинга - добавляем сам узел как свойство
 				if (!hasBinding) {
 					const property = firstLevelMatch[1];
-					if (!property.startsWith("$") && property !== "null" && property !== "true" && property !== "false") {
+					if (
+						!property.startsWith("$") &&
+						property !== "null" &&
+						property !== "true" &&
+						property !== "false"
+					) {
 						propertyToAdd = property;
 					}
 				}
@@ -153,10 +160,10 @@ function mergePropertiesWithBaseClasses(data: ProjectData) {
 		if (visited.has(componentName)) {
 			return new Set(); // Избегаем циклических зависимостей
 		}
-		
+
 		visited.add(componentName);
 		const properties = new Set(data.componentProperties.get(componentName) || []);
-		
+
 		// Добавляем свойства базового класса
 		const baseClass = data.componentBaseClasses.get(componentName);
 		if (baseClass && data.componentProperties.has(baseClass)) {
@@ -165,7 +172,7 @@ function mergePropertiesWithBaseClasses(data: ProjectData) {
 				properties.add(prop);
 			}
 		}
-		
+
 		return properties;
 	}
 
@@ -390,10 +397,10 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 
 		switch (completionContext.type) {
 			case "component_name":
-				await this.addComponentCompletions(items, projectData);
+				await this.addComponentCompletions(items, projectData, document, position);
 				break;
 			case "component_extends":
-				await this.addComponentCompletions(items, projectData);
+				await this.addComponentCompletions(items, projectData, document, position);
 				break;
 			case "property_name":
 				this.addPropertyCompletions(items, projectData, completionContext.currentComponent || null);
@@ -402,7 +409,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 				this.addBindingCompletions(items);
 				break;
 			case "value":
-				this.addValueCompletions(items, projectData);
+				this.addValueCompletions(items, projectData, document, position);
 				break;
 		}
 
@@ -411,7 +418,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 
 	private getCompletionContext(document: vscode.TextDocument, position: vscode.Position, beforeCursor: string) {
 		const trimmed = beforeCursor.trim();
-		const indentLevel = beforeCursor.length - beforeCursor.replace(/^\t*/, '').length;
+		const indentLevel = beforeCursor.length - beforeCursor.replace(/^\t*/, "").length;
 
 		// Если начинаем с $ в любом месте - это компонент
 		if (trimmed.startsWith("$")) {
@@ -447,11 +454,11 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 		for (let i = position.line; i >= 0; i--) {
 			const line = document.lineAt(i);
 			const text = line.text;
-			
+
 			// Если строка без отступа и начинается с $
-			if (!text.startsWith('\t') && text.trim().startsWith('$')) {
+			if (!text.startsWith("\t") && text.trim().startsWith("$")) {
 				const firstWord = text.trim().split(/\s+/)[0];
-				if (firstWord.startsWith('$')) {
+				if (firstWord.startsWith("$")) {
 					return firstWord;
 				}
 			}
@@ -459,13 +466,26 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 		return null;
 	}
 
-	private async addComponentCompletions(items: vscode.CompletionItem[], projectData: ProjectData) {
+	private async addComponentCompletions(
+		items: vscode.CompletionItem[],
+		projectData: ProjectData,
+		document: vscode.TextDocument,
+		position: vscode.Position,
+	) {
 		console.log(`[view.tree] Adding component completions: ${projectData.components.size} components`);
+
+		// Найти начало компонента для правильной замены
+		const lineText = document.lineAt(position).text;
+		let start = position.character;
+		while (start > 0 && /[\w$]/.test(lineText[start - 1])) {
+			start--;
+		}
+		const range = new vscode.Range(position.line, start, position.line, position.character);
 
 		// Добавляем компоненты из проекта
 		for (const component of projectData.components) {
 			const item = new vscode.CompletionItem(component, vscode.CompletionItemKind.Class);
-			item.insertText = component;
+			item.textEdit = new vscode.TextEdit(range, component);
 			item.sortText = "1" + component;
 			items.push(item);
 		}
@@ -479,7 +499,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 			if (symbol.name.startsWith("$") && !projectData.components.has(symbol.name)) {
 				const item = new vscode.CompletionItem(symbol.name, vscode.CompletionItemKind.Class);
 				item.detail = symbol.containerName;
-				item.insertText = symbol.name;
+				item.textEdit = new vscode.TextEdit(range, symbol.name);
 				item.sortText = "2" + symbol.name;
 				items.push(item);
 			}
@@ -488,7 +508,11 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 		console.log(`[view.tree] Added ${items.length} completion items`);
 	}
 
-	private addPropertyCompletions(items: vscode.CompletionItem[], projectData: ProjectData, currentComponent: string | null) {
+	private addPropertyCompletions(
+		items: vscode.CompletionItem[],
+		projectData: ProjectData,
+		currentComponent: string | null,
+	) {
 		// Добавляем свойства текущего компонента
 		if (currentComponent && projectData.componentProperties.has(currentComponent)) {
 			const properties = projectData.componentProperties.get(currentComponent)!;
@@ -541,7 +565,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 		}
 	}
 
-	private addValueCompletions(items: vscode.CompletionItem[], projectData: ProjectData) {
+	private addValueCompletions(items: vscode.CompletionItem[], projectData: ProjectData, document: vscode.TextDocument, position: vscode.Position) {
 		const specialValues = [
 			{ text: "null", detail: "Null value" },
 			{ text: "true", detail: "Boolean true" },
@@ -558,7 +582,7 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 			items.push(item);
 		}
 
-		this.addComponentCompletions(items, projectData);
+		this.addComponentCompletions(items, projectData, document, position);
 	}
 }
 
