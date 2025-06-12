@@ -60,9 +60,6 @@ async function scanProject(): Promise<ProjectData> {
 		}
 	}
 
-	// Объединяем свойства с базовыми классами
-	mergePropertiesWithBaseClasses(data);
-
 	console.log(
 		`[view.tree] Scan complete: ${data.components.size} components, ${data.componentProperties.size} components with properties`,
 	);
@@ -144,35 +141,24 @@ function parseTsFile(content: string, data: ProjectData) {
 	}
 }
 
-function mergePropertiesWithBaseClasses(data: ProjectData) {
-	// Рекурсивная функция для получения всех свойств компонента с учетом наследования
-	function getAllProperties(componentName: string, visited = new Set<string>()): Set<string> {
-		if (visited.has(componentName)) {
-			return new Set(); // Избегаем циклических зависимостей
-		}
-
-		visited.add(componentName);
-		const properties = new Set(data.componentProperties.get(componentName) || []);
-
-		// Добавляем свойства базового класса
-		const baseClass = data.componentBaseClasses.get(componentName);
-		if (baseClass && data.componentProperties.has(baseClass)) {
-			const baseProperties = getAllProperties(baseClass, visited);
-			for (const prop of baseProperties) {
-				properties.add(prop);
-			}
-		}
-
-		return properties;
+function getComponentProperties(componentName: string, data: ProjectData, visited = new Set<string>()): Set<string> {
+	if (visited.has(componentName)) {
+		return new Set(); // Избегаем циклических зависимостей
 	}
 
-	// Обновляем свойства всех компонентов
-	for (const componentName of data.components) {
-		if (data.componentProperties.has(componentName)) {
-			const allProperties = getAllProperties(componentName);
-			data.componentProperties.set(componentName, allProperties);
+	visited.add(componentName);
+	const properties = new Set(data.componentProperties.get(componentName) || []);
+
+	// Добавляем свойства базового класса
+	const baseClass = data.componentBaseClasses.get(componentName);
+	if (baseClass && data.componentProperties.has(baseClass)) {
+		const baseProperties = getComponentProperties(baseClass, data, visited);
+		for (const prop of baseProperties) {
+			properties.add(prop);
 		}
 	}
+
+	return properties;
 }
 
 async function refreshProjectData() {
@@ -503,9 +489,9 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 		projectData: ProjectData,
 		currentComponent: string | null,
 	) {
-		// Добавляем свойства текущего компонента
-		if (currentComponent && projectData.componentProperties.has(currentComponent)) {
-			const properties = projectData.componentProperties.get(currentComponent)!;
+		// Добавляем свойства текущего компонента с учетом наследования
+		if (currentComponent) {
+			const properties = getComponentProperties(currentComponent, projectData);
 			for (const property of properties) {
 				const item = new vscode.CompletionItem(property, vscode.CompletionItemKind.Property);
 				item.detail = `Property of ${currentComponent}`;
@@ -518,7 +504,8 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 		// Добавляем общие свойства если компонент не найден
 		if (!currentComponent) {
 			const allProperties = new Set<string>();
-			for (const properties of projectData.componentProperties.values()) {
+			for (const component of projectData.components) {
+				const properties = getComponentProperties(component, projectData);
 				for (const property of properties) {
 					allProperties.add(property);
 				}
