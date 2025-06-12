@@ -15,9 +15,10 @@ let projectData: ProjectData = {
 };
 
 async function scanProject(): Promise<ProjectData> {
+	const molViewProps = new Set(["dom_name", "style", "event", "field", "attr", "sub", "title"]);
 	const data: ProjectData = {
 		components: new Set(),
-		componentProperties: new Map(),
+		componentProperties: new Map([["$mol_view", molViewProps]]),
 		componentBaseClasses: new Map(),
 	};
 
@@ -75,6 +76,9 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 	const lines = content.split("\n");
 	let currentComponent: string | null = null;
 
+	// Временная карта для сбора свойств текущего файла
+	const tempProperties = new Map<string, Set<string>>();
+
 	for (const line of lines) {
 		const trimmed = line.trim();
 
@@ -85,8 +89,8 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 			if (firstWord.startsWith("$")) {
 				currentComponent = firstWord;
 				data.components.add(firstWord);
-				if (!data.componentProperties.has(firstWord)) {
-					data.componentProperties.set(firstWord, new Set());
+				if (!tempProperties.has(firstWord)) {
+					tempProperties.set(firstWord, new Set());
 				}
 
 				// Парсим базовый класс (второе слово, если есть)
@@ -104,7 +108,7 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 				// Добавляем первое слово как свойство без дополнительных проверок
 				const property = firstLevelMatch[1];
 				if (!property.startsWith("$")) {
-					data.componentProperties.get(currentComponent)!.add(property);
+					tempProperties.get(currentComponent)!.add(property);
 				}
 
 				// Ищем свойства в правой части биндингов
@@ -113,11 +117,20 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 				for (const match of bindingRightSideMatches) {
 					const rightSideProperty = match[1];
 					if (!rightSideProperty.startsWith("$")) {
-						data.componentProperties.get(currentComponent)!.add(rightSideProperty);
+						tempProperties.get(currentComponent)!.add(rightSideProperty);
 					}
 				}
 			}
 		}
+	}
+
+	// Обновляем основную карту свойств, сохраняя только $mol_view свойства
+	const molViewProps = data.componentProperties.get("$mol_view");
+	for (const [component, properties] of tempProperties) {
+		data.componentProperties.set(component, properties);
+	}
+	if (molViewProps) {
+		data.componentProperties.set("$mol_view", molViewProps);
 	}
 }
 
