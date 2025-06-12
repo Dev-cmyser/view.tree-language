@@ -65,7 +65,8 @@ async function scanProject(): Promise<ProjectData> {
 	console.log(
 		`[view.tree] Scan complete: ${data.components.size} components, ${data.componentProperties.size} components with properties`,
 	);
-	console.log("[view.tree] Components found:", Array.from(data.components));
+	// console.log("[view.tree] Components found:", Array.from(data.components));
+	console.log("[view.tree] Components props found:", Array.from(data.componentProperties));
 
 	return data;
 }
@@ -100,44 +101,20 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 			// Проверяем узлы на первом уровне отступа (один таб)
 			const firstLevelMatch = line.match(/^\t([a-zA-Z_][a-zA-Z0-9_?*]*)/);
 			if (firstLevelMatch) {
-				let hasBinding = false;
-				let propertyToAdd: string | null = null;
-
-				// Проверяем биндинги <=, <=>, => и берем ЛЕВУЮ часть
-				const bindingMatches = [
-					line.match(/^\t+([a-zA-Z_][a-zA-Z0-9_?*]*)\s*<=/),
-					line.match(/^\t+([a-zA-Z_][a-zA-Z0-9_?*]*)\s*<==>/),
-					line.match(/^\t+([a-zA-Z_][a-zA-Z0-9_?*]*)\s*=>/),
-				];
-
-				// Если есть биндинг - добавляем левую часть (имя свойства)
-				for (const bindingMatch of bindingMatches) {
-					if (bindingMatch) {
-						hasBinding = true;
-						const property = bindingMatch[1];
-						if (!property.startsWith("$")) {
-							propertyToAdd = property;
-							break;
-						}
-					}
+				// Добавляем первое слово как свойство без дополнительных проверок
+				const property = firstLevelMatch[1];
+				if (!property.startsWith("$")) {
+					data.componentProperties.get(currentComponent)!.add(property);
 				}
 
-				// Если нет биндинга - добавляем сам узел как свойство
-				if (!hasBinding) {
-					const property = firstLevelMatch[1];
-					if (
-						!property.startsWith("$") &&
-						property !== "null" &&
-						property !== "true" &&
-						property !== "false"
-					) {
-						propertyToAdd = property;
-					}
-				}
+				// Ищем свойства в правой части биндингов
+				const bindingRightSideMatches = [...line.matchAll(/(?:<=|<=>|=>)\s*([a-zA-Z_][a-zA-Z0-9_?*]*)/g)];
 
-				// Добавляем свойство
-				if (propertyToAdd) {
-					data.componentProperties.get(currentComponent)!.add(propertyToAdd);
+				for (const match of bindingRightSideMatches) {
+					const rightSideProperty = match[1];
+					if (!rightSideProperty.startsWith("$")) {
+						data.componentProperties.get(currentComponent)!.add(rightSideProperty);
+					}
 				}
 			}
 		}
@@ -565,7 +542,12 @@ class CompletionProvider implements vscode.CompletionItemProvider {
 		}
 	}
 
-	private addValueCompletions(items: vscode.CompletionItem[], projectData: ProjectData, document: vscode.TextDocument, position: vscode.Position) {
+	private addValueCompletions(
+		items: vscode.CompletionItem[],
+		projectData: ProjectData,
+		document: vscode.TextDocument,
+		position: vscode.Position,
+	) {
 		const specialValues = [
 			{ text: "null", detail: "Null value" },
 			{ text: "true", detail: "Boolean true" },
