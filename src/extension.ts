@@ -21,43 +21,17 @@ async function scanProject(): Promise<ProjectData> {
 
 	console.log("[view.tree] Starting project scan...");
 
-	// Проверяем что рабочая область открыта
 	if (!vscode.workspace.workspaceFolders) {
 		console.log("[view.tree] No workspace folders found");
 		return data;
 	}
 
-	// Сканируем .view.tree файлы
-	const viewTreeFiles = await vscode.workspace.findFiles("**/*.view.tree", "**/node_modules/**");
-	console.log(`[view.tree] Found ${viewTreeFiles.length} .view.tree files`);
+	const viewTreeFiles = await vscode.workspace.findFiles("**/*.view.tree, **/*.ts", "**/node_modules/**, **/-/**");
 
 	for (const file of viewTreeFiles) {
 		try {
-			const buffer = await vscode.workspace.fs.readFile(file);
-			const content = buffer.toString();
-			console.log(`[view.tree] Parsing ${file.path}`);
 			const componentsFromFile = await getComponentsFromFile(file);
-			const result = parseViewTreeFile(content);
-
-			for (const [component, properties] of result.componentsWithProperties) {
-				data.componentsWithProperties.set(component, properties);
-			}
-		} catch (error) {
-			console.log(`[view.tree] Error reading ${file.path}:`, error);
-		}
-	}
-
-	// Сканируем .ts файлы для поиска $mol компонентов
-	const tsFiles = await vscode.workspace.findFiles("**/*.ts", "**/node_modules/**, **/-/**");
-	console.log(`[view.tree] Found ${tsFiles.length} .ts files`);
-
-	for (const file of tsFiles) {
-		try {
-			const buffer = await vscode.workspace.fs.readFile(file);
-			const content = buffer.toString();
-			const componentsFromFile = await getComponentsFromFile(file);
-			const result = parseTsFile(content);
-			for (const [component, properties] of result.componentsWithProperties) {
+			for (const [component, properties] of componentsFromFile) {
 				data.componentsWithProperties.set(component, properties);
 			}
 		} catch (error) {
@@ -150,19 +124,19 @@ function parseTsFile(content: string): { componentsWithProperties: Map<string, S
 }
 
 async function getComponentsFromFile(uri: vscode.Uri): Promise<Map<string, Set<string>>> {
-	let componentsWithProperties: Map<string, Set<string>>;
+	const componentsWithProperties = new Map<string, Set<string>>();
 	try {
 		const buffer = await vscode.workspace.fs.readFile(uri);
 		const content = buffer.toString();
 
 		if (uri.path.endsWith(".view.tree")) {
-			const view_tree_components = parseViewTreeFile(content);
-			for (const [component, properties] of view_tree_components) {
+			const result = parseViewTreeFile(content);
+			for (const [component, properties] of result.componentsWithProperties) {
 				componentsWithProperties.set(component, properties);
 			}
 		} else if (uri.path.endsWith(".ts")) {
-			const ts_components = parseTsFile(content);
-			for (const [component, properties] of ts_components) {
+			const result = parseTsFile(content);
+			for (const [component, properties] of result.componentsWithProperties) {
 				componentsWithProperties.set(component, properties);
 			}
 		}
@@ -175,9 +149,6 @@ async function getComponentsFromFile(uri: vscode.Uri): Promise<Map<string, Set<s
 async function updateSingleFile(uri: vscode.Uri) {
 	console.log(`[view.tree] Updating single file: ${uri.path}`);
 	try {
-		const buffer = await vscode.workspace.fs.readFile(uri);
-		const content = buffer.toString();
-
 		const components = await getComponentsFromFile(uri);
 		for (const [component, properties] of components) {
 			projectData.componentsWithProperties.set(component, properties);
@@ -189,10 +160,15 @@ async function updateSingleFile(uri: vscode.Uri) {
 
 async function removeSingleFile(uri: vscode.Uri) {
 	console.log(`[view.tree] File deleted: ${uri.path}`);
-	// нужно удалить только 1 компонент так как 1 файл = 1 компонент
-	const components = await getComponentsFromFile(uri);
-	projectData.componentsWithProperties.delete(components);
-	console.log(`[view.tree] Removed component: ${component}`);
+
+	// Получаем компоненты, которые были в удаленном файле
+	const componentsToRemove = await getComponentsFromFile(uri);
+
+	// Удаляем только эти компоненты из projectData
+	for (const component of componentsToRemove.keys()) {
+		projectData.componentsWithProperties.delete(component);
+		console.log(`[view.tree] Removed component: ${component}`);
+	}
 }
 
 // Инициализируем сканирование
