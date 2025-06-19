@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { DefinitionProvider } from "./definition-provider";
 
 interface ProjectData {
 	componentsWithProperties: Map<string, Set<string>>;
@@ -184,6 +185,10 @@ async function removeSingleFile(uri: vscode.Uri) {
 
 // Инициализируем сканирование
 refreshProjectData();
+
+// Регистрируем провайдер определений
+const definitionProvider = new DefinitionProvider(() => projectData);
+vscode.languages.registerDefinitionProvider({ scheme: "file", language: "view.tree" }, definitionProvider);
 
 // Отслеживаем изменения файлов
 const fileWatcher = vscode.workspace.createFileSystemWatcher("**/*.{view.tree,ts}");
