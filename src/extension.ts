@@ -1,17 +1,22 @@
 import * as vscode from "vscode";
 
 interface ProjectData {
-	componentProperties: Map<string, Set<string>>;
+	componentsWithProperties: Map<string, Set<string>>;
 }
 
 let projectData: ProjectData = {
-	componentProperties: new Map(),
+	componentsWithProperties: new Map(),
 };
+
+async function refreshProjectData() {
+	console.log("[view.tree] Refreshing project data...");
+	projectData = await scanProject();
+}
 
 async function scanProject(): Promise<ProjectData> {
 	const molViewProps = new Set(["dom_name", "style", "event", "field", "attr", "sub", "title"]);
 	const data: ProjectData = {
-		componentProperties: new Map([["$mol_view", molViewProps]]),
+		componentsWithProperties: new Map([["$mol_view", molViewProps]]),
 	};
 
 	console.log("[view.tree] Starting project scan...");
@@ -35,7 +40,7 @@ async function scanProject(): Promise<ProjectData> {
 			const result = parseViewTreeFile(content);
 
 			for (const [component, properties] of result.componentsWithProperties) {
-				data.componentProperties.set(component, properties);
+				data.componentsWithProperties.set(component, properties);
 			}
 		} catch (error) {
 			console.log(`[view.tree] Error reading ${file.path}:`, error);
@@ -53,15 +58,15 @@ async function scanProject(): Promise<ProjectData> {
 			const componentsFromFile = await getComponentsFromFile(file);
 			const result = parseTsFile(content);
 			for (const [component, properties] of result.componentsWithProperties) {
-				data.componentProperties.set(component, properties);
+				data.componentsWithProperties.set(component, properties);
 			}
 		} catch (error) {
 			console.log(`[view.tree] Error reading ${file.path}:`, error);
 		}
 	}
 
-	console.log(`[view.tree] Scan complete: ${data.componentProperties.size} components with properties`);
-	console.log("[view.tree] Components props found:", Array.from(data.componentProperties));
+	console.log(`[view.tree] Scan complete: ${data.componentsWithProperties.size} components with properties`);
+	console.log("[view.tree] Components props found:", Array.from(data.componentsWithProperties));
 
 	return data;
 }
@@ -144,9 +149,27 @@ function parseTsFile(content: string): { componentsWithProperties: Map<string, S
 	return { componentsWithProperties };
 }
 
-async function refreshProjectData() {
-	console.log("[view.tree] Refreshing project data...");
-	projectData = await scanProject();
+async function getComponentsFromFile(uri: vscode.Uri): Promise<Map<string, Set<string>>> {
+	let componentsWithProperties: Map<string, Set<string>>;
+	try {
+		const buffer = await vscode.workspace.fs.readFile(uri);
+		const content = buffer.toString();
+
+		if (uri.path.endsWith(".view.tree")) {
+			const view_tree_components = parseViewTreeFile(content);
+			for (const [component, properties] of view_tree_components) {
+				componentsWithProperties.set(component, properties);
+			}
+		} else if (uri.path.endsWith(".ts")) {
+			const ts_components = parseTsFile(content);
+			for (const [component, properties] of ts_components) {
+				componentsWithProperties.set(component, properties);
+			}
+		}
+	} catch (error) {
+		console.log(`[view.tree] Error reading file for component extraction ${uri.path}:`, error);
+	}
+	return componentsWithProperties;
 }
 
 async function updateSingleFile(uri: vscode.Uri) {
@@ -155,63 +178,21 @@ async function updateSingleFile(uri: vscode.Uri) {
 		const buffer = await vscode.workspace.fs.readFile(uri);
 		const content = buffer.toString();
 
-		const componentsFromFile = await getComponentsFromFile(uri);
-
-		if (uri.path.endsWith(".view.tree")) {
-			const result = parseViewTreeFile(content);
-			for (const [component, properties] of result.componentsWithProperties) {
-				projectData.componentProperties.set(component, properties);
-			}
-		} else if (uri.path.endsWith(".ts")) {
-			const result = parseTsFile(content);
-			for (const [component, properties] of result.componentsWithProperties) {
-				projectData.componentProperties.set(component, properties);
-			}
+		const components = await getComponentsFromFile(uri);
+		for (const [component, properties] of components) {
+			projectData.componentsWithProperties.set(component, properties);
 		}
 	} catch (error) {
 		console.log(`[view.tree] Error updating file ${uri.path}:`, error);
 	}
 }
 
-async function getComponentsFromFile(uri: vscode.Uri): Promise<Set<string>> {
-	const components = new Set<string>();
-	try {
-		const buffer = await vscode.workspace.fs.readFile(uri);
-		const content = buffer.toString();
-
-		if (uri.path.endsWith(".view.tree")) {
-			const lines = content.split("\n");
-			for (const line of lines) {
-				const trimmed = line.trim();
-				if (!line.startsWith("\t") && trimmed.startsWith("$")) {
-					const words = trimmed.split(/\s+/);
-					const firstWord = words[0];
-					components.add(firstWord);
-				}
-			}
-		} else if (uri.path.endsWith(".ts")) {
-			const classMatch = content.match(/export\s+class\s+(\$\w+)/);
-			if (classMatch) {
-				components.add(classMatch[1]);
-			}
-		}
-	} catch (error) {
-		console.log(`[view.tree] Error reading file for component extraction ${uri.path}:`, error);
-	}
-	return components;
-}
-
 async function removeSingleFile(uri: vscode.Uri) {
 	console.log(`[view.tree] File deleted: ${uri.path}`);
-
-	// Получаем компоненты, которые были в удаленном файле
-	const componentsToRemove = await getComponentsFromFile(uri);
-
-	// Удаляем только эти компоненты из projectData
-	for (const component of componentsToRemove) {
-		projectData.componentProperties.delete(component);
-		console.log(`[view.tree] Removed component: ${component}`);
-	}
+	// нужно удалить только 1 компонент так как 1 файл = 1 компонент
+	const components = await getComponentsFromFile(uri);
+	projectData.componentsWithProperties.delete(components);
+	console.log(`[view.tree] Removed component: ${component}`);
 }
 
 // Инициализируем сканирование
