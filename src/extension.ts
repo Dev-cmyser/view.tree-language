@@ -26,7 +26,7 @@ async function scanProject(): Promise<ProjectData> {
 		return data;
 	}
 
-	const allFiles = await vscode.workspace.findFiles("**/*.{view.tree,ts}", "**/node_modules/**,**/-/**");
+	const allFiles = await vscode.workspace.findFiles("**/*.{view.tree,ts}", "**/node_modules/**");
 
 	for (const file of allFiles) {
 		try {
@@ -40,8 +40,6 @@ async function scanProject(): Promise<ProjectData> {
 	}
 
 	console.log(`[view.tree] Scan complete: ${data.componentsWithProperties.size} components with properties`);
-	console.log("[view.tree] Components props found:", Array.from(data.componentsWithProperties));
-
 	return data;
 }
 
