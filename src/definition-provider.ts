@@ -15,17 +15,27 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 		console.log("[DefinitionProvider] provideDefinition called");
 		console.log("[DefinitionProvider] Position:", position.line, position.character);
 
-		const wordRange = document.getWordRangeAtPosition(position);
-		if (!wordRange) {
-			console.log("[DefinitionProvider] No word range found");
-			return undefined;
+		const line = document.lineAt(position.line).text;
+		const character = position.character;
+
+		// Определяем слово с учетом $ символа
+		let wordStart = character;
+		let wordEnd = character;
+
+		// Ищем начало слова (включая $)
+		while (wordStart > 0 && /[\w$]/.test(line[wordStart - 1])) {
+			wordStart--;
 		}
 
-		const word = document.getText(wordRange);
-		const line = document.lineAt(position.line).text;
+		// Ищем конец слова
+		while (wordEnd < line.length && /[\w]/.test(line[wordEnd])) {
+			wordEnd++;
+		}
 
+		const word = line.substring(wordStart, wordEnd);
 		console.log("[DefinitionProvider] Word:", word);
 		console.log("[DefinitionProvider] Line:", line);
+		console.log("[DefinitionProvider] Word range:", wordStart, "-", wordEnd);
 
 		// Проверяем, является ли слово $компонентом
 		if (word.startsWith("$")) {
@@ -64,6 +74,45 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 
 	private async findComponentDefinition(componentName: string): Promise<vscode.Definition | undefined> {
 		console.log("[DefinitionProvider] Finding component definition for:", componentName);
+
+		// Сначала проверяем, есть ли компонент в нашей мапе
+		const projectData = this.getProjectData();
+		if (projectData.componentsWithProperties.has(componentName)) {
+			const componentData = projectData.componentsWithProperties.get(componentName)!;
+			console.log("[DefinitionProvider] Found component in map, file:", componentData.file);
+
+			// Используем известный файл компонента
+			const componentUri = vscode.Uri.file(componentData.file);
+
+			if (componentData.file.endsWith(".ts")) {
+				// Ищем объявление класса в .ts файле
+				try {
+					const buffer = await vscode.workspace.fs.readFile(componentUri);
+					const content = buffer.toString();
+					const lines = content.split("\n");
+
+					console.log("[DefinitionProvider] Searching for class declaration in:", componentData.file);
+
+					for (let i = 0; i < lines.length; i++) {
+						if (lines[i].includes(`export class ${componentName}`)) {
+							const location = new vscode.Location(componentUri, new vscode.Position(i, 0));
+							console.log("[DefinitionProvider] Found class declaration at line:", i);
+							return location;
+						}
+					}
+				} catch (error) {
+					console.log("[DefinitionProvider] Error reading component file:", error);
+				}
+			}
+
+			// Для .view.tree файлов или если не нашли класс, возвращаем начало файла
+			const location = new vscode.Location(componentUri, new vscode.Position(0, 0));
+			console.log("[DefinitionProvider] Returning component file location:", componentData.file);
+			return location;
+		}
+
+		// Если компонент не найден в мапе, пробуем поиск по паттернам
+		console.log("[DefinitionProvider] Component not found in map, trying file patterns");
 
 		// Ищем .view.tree файл для компонента
 		const viewTreePattern = `**/${componentName.substring(1).replace(/_/g, "/")}*.view.tree`;
