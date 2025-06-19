@@ -132,7 +132,8 @@ async function getComponentsFromFile(uri: vscode.Uri): Promise<Map<string, Set<s
 			for (const [component, properties] of result.componentsWithProperties) {
 				componentsWithProperties.set(component, properties);
 			}
-		} else if (uri.path.endsWith(".ts")) {
+		}
+		if (uri.path.endsWith(".ts")) {
 			const result = parseTsFile(content);
 			for (const [component, properties] of result.componentsWithProperties) {
 				componentsWithProperties.set(component, properties);
