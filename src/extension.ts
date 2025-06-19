@@ -39,18 +39,13 @@ async function scanProject(): Promise<ProjectData> {
 		}
 	}
 
-	console.log(
-		`[view.tree] Scan complete components: ${JSON.stringify(data.componentsWithProperties.keys())} components with properties`,
-	);
-	console.log(
-		`[view.tree] Scan complete props: ${JSON.stringify(data.componentsWithProperties.values())} components with properties`,
-	);
+	console.log(`[view.tree] Scan complete: ${data.componentsWithProperties.size} components with properties`);
+	console.log("[view.tree] Components found:", Array.from(data.componentsWithProperties.keys()));
+
 	return data;
 }
 
-function parseViewTreeFile(content: string): {
-	componentsWithProperties: Map<string, Set<string>>;
-} {
+function parseViewTreeFile(content: string): { componentsWithProperties: Map<string, Set<string>> } {
 	const lines = content.split("\n");
 	let currentComponent: string | null = null;
 
@@ -72,9 +67,14 @@ function parseViewTreeFile(content: string): {
 
 		// Ищем свойства компонента
 		if (currentComponent) {
-			// Проверяем узлы на первом уровне отступа (один таб)
-			const firstLevelMatch = line.match(/^\t([a-zA-Z_][a-zA-Z0-9_?*]*)/);
+			// Проверяем узлы ТОЛЬКО с одним табом и БЕЗ биндингов и других символов
+			const firstLevelMatch = line.match(/^\t([a-zA-Z_][a-zA-Z0-9_?*]*)\s*$/);
 			if (firstLevelMatch) {
+				// Исключаем строки с биндингами <=, <=>, =>, слэшами и другими символами
+				if (line.includes("<=") || line.includes("=>") || line.includes("/") || line.includes("\\")) {
+					continue;
+				}
+
 				// Добавляем первое слово как свойство без дополнительных проверок
 				const property = firstLevelMatch[1];
 
