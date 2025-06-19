@@ -148,7 +148,16 @@ async function getComponentsFromFile(uri: vscode.Uri): Promise<Map<string, Set<s
 async function updateSingleFile(uri: vscode.Uri) {
 	console.log(`[view.tree] Updating single file: ${uri.path}`);
 	try {
+		// Получаем актуальные компоненты из файла
 		const components = await getComponentsFromFile(uri);
+
+		// Удаляем все компоненты которые могли быть из этого файла
+		// (так как 1 файл = 1 компонент, удаляем по ключам новых компонентов)
+		for (const component of components.keys()) {
+			projectData.componentsWithProperties.delete(component);
+		}
+
+		// Добавляем актуальные компоненты с их свойствами
 		for (const [component, properties] of components) {
 			projectData.componentsWithProperties.set(component, properties);
 		}
