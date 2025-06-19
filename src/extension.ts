@@ -19,7 +19,7 @@ async function scanProject(): Promise<ProjectData> {
 
 	console.log("[view.tree] Starting project scan...");
 
-	// Проверяем что workspace открыт
+	// Проверяем что рабочая область открыта
 	if (!vscode.workspace.workspaceFolders) {
 		console.log("[view.tree] No workspace folders found");
 		return data;
@@ -72,7 +72,7 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 	for (const line of lines) {
 		const trimmed = line.trim();
 
-		// Брать только первое слово из строк без отступа
+		// Берем только первое слово из строк без отступа
 		if (!line.startsWith("\t") && trimmed.startsWith("$")) {
 			const words = trimmed.split(/\s+/);
 			const firstWord = words[0];
@@ -91,8 +91,20 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 				// Добавляем первое слово как свойство без дополнительных проверок
 				const property = firstLevelMatch[1];
 
+				// Добавляем свойство в tempProperties для текущего компонента
+				if (!tempProperties.has(currentComponent)) {
+					tempProperties.set(currentComponent, new Set());
+				}
+				tempProperties.get(currentComponent)!.add(property);
+
+				// Также добавляем компоненты из правой части биндингов как свойства
 				const bindingRightSideMatches = [...line.matchAll(/(?:<=|<=>|=>)\s*([a-zA-Z_][a-zA-Z0-9_?*]*)/g)];
-				// todo дописать добавление свойства в tempProperties
+				for (const match of bindingRightSideMatches) {
+					const bindingComponent = match[1];
+					if (bindingComponent.startsWith("$")) {
+						data.components.add(bindingComponent);
+					}
+				}
 			}
 		}
 	}
@@ -103,19 +115,30 @@ function parseViewTreeFile(content: string, data: ProjectData) {
 }
 
 function parseTsFile(content: string, data: ProjectData) {
-	// Ищем все $ компоненты в TypeScript файлах
-	const componentMatches = content.match(/\$\w+/g);
-	if (componentMatches) {
-		for (const match of componentMatches) {
-			data.components.add(match);
+	const lines = content.split("\n");
+	let currentClass: string | null = null;
+
+	for (const line of lines) {
+		// Ищем только первый $компонент в TypeScript файле
+		const classMatch = line.match(/export\s+class\s+(\$\w+)/);
+		if (classMatch) {
+			currentClass = classMatch[1];
+			data.components.add(currentClass);
+			if (!data.componentProperties.has(currentClass)) {
+				data.componentProperties.set(currentClass, new Set());
+			}
+
+			// Ищем методы с двумя табами (свойства компонента)
+			const methodMatch = line.match(/^\t\t([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/);
+			if (methodMatch) {
+				const methodName = methodMatch[1];
+				// Исключаем конструктор и стандартные методы
+				if (methodName !== "constructor" && !methodName.startsWith("_")) {
+					data.componentProperties.get(currentClass)!.add(methodName);
+				}
+			}
 		}
 	}
-	// todo искать и свойства компонентов (регекс - два таба + имя функции соответвенно надо вытащить имя функции)
-	// examples
-	// 		maximal_width() {
-	// 			return this.minimal_width()
-
-	//		minimal_height() {
 }
 
 async function refreshProjectData() {
@@ -141,14 +164,40 @@ async function updateSingleFile(uri: vscode.Uri) {
 
 async function removeSingleFile(uri: vscode.Uri) {
 	console.log(`[view.tree] File deleted: ${uri.path}`);
-	// todo,  переделать под удаление из мапы только этого класса и его свойств
-	await refreshProjectData();
+
+	const buffer = await vscode.workspace.fs.readFile(uri);
+	const content = buffer.toString();
+	let component = "";
+
+	if (uri.path.endsWith(".view.tree")) {
+		const lines = content.split("\n");
+		for (const line of lines) {
+			if (line.startsWith("$")) {
+				const words = line.split(/\s+/);
+				component = words[0];
+			}
+		}
+	} else if (uri.path.endsWith(".ts")) {
+		const classMatches = content.match(/export\s+class\s+(\$\w+)/g);
+		if (classMatches) {
+			for (const match of classMatches) {
+				const componentMatch = match.match(/export\s+class\s+(\$\w+)/);
+				if (componentMatch) {
+					component = componentMatch[1];
+				}
+			}
+		}
+	}
+
+	projectData.components.delete(component);
+	projectData.componentProperties.delete(component);
+	console.log(`[view.tree] Removed component: ${component}`);
 }
 
 // Инициализируем сканирование
 refreshProjectData();
 
-// Следим за изменениями файлов
+// Отслеживаем изменения файлов
 const fileWatcher = vscode.workspace.createFileSystemWatcher("**/*.{view.tree,ts}");
 fileWatcher.onDidChange(updateSingleFile);
 fileWatcher.onDidCreate(updateSingleFile);
