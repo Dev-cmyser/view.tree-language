@@ -39,7 +39,12 @@ async function scanProject(): Promise<ProjectData> {
 		}
 	}
 
-	console.log(`[view.tree] Scan complete: ${data.componentsWithProperties.size} components with properties`);
+	console.log(
+		`[view.tree] Scan complete components: ${JSON.stringify(data.componentsWithProperties.keys())} components with properties`,
+	);
+	console.log(
+		`[view.tree] Scan complete props: ${JSON.stringify(data.componentsWithProperties.values())} components with properties`,
+	);
 	return data;
 }
 
@@ -147,22 +152,20 @@ async function getComponentsFromFile(uri: vscode.Uri): Promise<Map<string, Set<s
 
 async function updateSingleFile(uri: vscode.Uri) {
 	console.log(`[view.tree] Updating single file: ${uri.path}`);
-	try {
-		// Получаем актуальные компоненты из файла
-		const components = await getComponentsFromFile(uri);
+	// Получаем актуальные компоненты из файла
+	const components = await getComponentsFromFile(uri);
+	console.log(`[view.tree] New components  ${components} aaaa:`);
 
-		// Удаляем все компоненты которые могли быть из этого файла
-		// (так как 1 файл = 1 компонент, удаляем по ключам новых компонентов)
-		for (const component of components.keys()) {
-			projectData.componentsWithProperties.delete(component);
-		}
+	// Удаляем все компоненты которые могли быть из этого файла
+	// (так как 1 файл = 1 компонент, удаляем по ключам новых компонентов)
+	for (const component of components.keys()) {
+		projectData.componentsWithProperties.delete(component);
+	}
 
-		// Добавляем актуальные компоненты с их свойствами
-		for (const [component, properties] of components) {
-			projectData.componentsWithProperties.set(component, properties);
-		}
-	} catch (error) {
-		console.log(`[view.tree] Error updating file ${uri.path}:`, error);
+	// Добавляем актуальные компоненты с их свойствами
+	for (const [component, properties] of components) {
+		projectData.componentsWithProperties.set(component, properties);
+		console.log(`[view.tree] New components  ${components} \n ${properties}:`);
 	}
 }
 
