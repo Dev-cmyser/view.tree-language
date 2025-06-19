@@ -26,17 +26,22 @@ async function scanProject(): Promise<ProjectData> {
 		return data;
 	}
 
-	const allFiles = await vscode.workspace.findFiles("**/*.{view.tree,ts}", "**/node_modules/**,**/-/**,**/*.d.ts");
-	console.log(`[view.tree] Found ${allFiles.length} files total`);
+	const tsFiles = await vscode.workspace.findFiles("**/*.ts", "**/node_modules/**");
+	const viewTreeFiles = await vscode.workspace.findFiles("**/*.view.tree", "**/node_modules/**");
 
-	for (const file of allFiles) {
-		try {
-			const componentsFromFile = await getComponentsFromFile(file);
-			for (const [component, properties] of componentsFromFile) {
-				data.componentsWithProperties.set(component, { properties, file: file.path });
-			}
-		} catch (error) {
-			console.log(`[view.tree] Error reading ${file.path}:`, error);
+	for (const file of tsFiles) {
+		if (file.path.endsWith(".d.ts")) {
+			continue;
+		}
+		const componentsFromFile = await getComponentsFromFile(file);
+		for (const [component, properties] of componentsFromFile) {
+			data.componentsWithProperties.set(component, { properties, file: file.path });
+		}
+	}
+	for (const file of viewTreeFiles) {
+		const componentsFromFile = await getComponentsFromFile(file);
+		for (const [component, properties] of componentsFromFile) {
+			data.componentsWithProperties.set(component, { properties, file: file.path });
 		}
 	}
 
