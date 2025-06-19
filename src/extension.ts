@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { DefinitionProvider } from "./definition-provider";
 
 interface ProjectData {
-	componentsWithProperties: Map<string, Set<string>>;
+	componentsWithProperties: Map<string, { properties: Set<string>; file: string }>;
 }
 
 let projectData: ProjectData = {
@@ -15,9 +15,8 @@ async function refreshProjectData() {
 }
 
 async function scanProject(): Promise<ProjectData> {
-	const molViewProps = new Set(["dom_name", "style", "event", "field", "attr", "sub", "title"]);
 	const data: ProjectData = {
-		componentsWithProperties: new Map([["$mol_view", molViewProps]]),
+		componentsWithProperties: new Map(),
 	};
 
 	console.log("[view.tree] Starting project scan...");
@@ -33,7 +32,7 @@ async function scanProject(): Promise<ProjectData> {
 		try {
 			const componentsFromFile = await getComponentsFromFile(file);
 			for (const [component, properties] of componentsFromFile) {
-				data.componentsWithProperties.set(component, properties);
+				data.componentsWithProperties.set(component, { properties, file: file.path });
 			}
 		} catch (error) {
 			console.log(`[view.tree] Error reading ${file.path}:`, error);
@@ -41,8 +40,6 @@ async function scanProject(): Promise<ProjectData> {
 	}
 
 	console.log(`[view.tree] Scan complete: ${data.componentsWithProperties.size} components with properties`);
-	console.log("[view.tree] Components found:", Array.from(data.componentsWithProperties.keys()));
-
 	return data;
 }
 
@@ -165,7 +162,7 @@ async function updateSingleFile(uri: vscode.Uri) {
 
 	// Добавляем актуальные компоненты с их свойствами
 	for (const [component, properties] of components) {
-		projectData.componentsWithProperties.set(component, properties);
+		projectData.componentsWithProperties.set(component, { properties, file: uri.path });
 		console.log(`[view.tree] New components  ${components} \n ${properties}:`);
 	}
 }
@@ -188,7 +185,7 @@ refreshProjectData();
 
 // Регистрируем провайдер определений
 const definitionProvider = new DefinitionProvider(() => projectData);
-vscode.languages.registerDefinitionProvider({ scheme: "file", language: "view.tree" }, definitionProvider);
+vscode.languages.registerDefinitionProvider({ scheme: "file", language: "tree" }, definitionProvider);
 
 // Отслеживаем изменения файлов
 const fileWatcher = vscode.workspace.createFileSystemWatcher("**/*.{view.tree,ts}");
