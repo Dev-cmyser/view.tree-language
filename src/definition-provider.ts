@@ -12,22 +12,13 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 		position: vscode.Position,
 		token: vscode.CancellationToken,
 	): Promise<vscode.Definition | undefined> {
-		const line = document.lineAt(position.line).text;
-		const character = position.character;
+		// Используем встроенный API для поиска слова с кастомным регексом
+		const wordRange = document.getWordRangeAtPosition(position, /\$?\w+/);
+		if (!wordRange) return undefined;
 
-		// Определяем слово с учетом $ символа
-		let wordStart = character;
-		let wordEnd = character;
+		const word = document.getText(wordRange);
 
-		while (wordStart > 0 && /[\w$]/.test(line[wordStart - 1])) {
-			wordStart--;
-		}
-		while (wordEnd < line.length && /[\w]/.test(line[wordEnd])) {
-			wordEnd++;
-		}
-
-		const word = line.substring(wordStart, wordEnd);
-
+		// Если это $компонент
 		if (word.startsWith("$")) {
 			return this.findComponentDefinition(word);
 		}
