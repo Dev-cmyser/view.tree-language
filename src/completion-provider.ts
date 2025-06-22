@@ -47,10 +47,13 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
 			const line = document.lineAt(i);
 			const lineText = line.text.trim();
 
-			// Если строка без отступов и начинается с $
-			if (!line.text.startsWith("\t") && lineText.startsWith("$")) {
+			if (lineText.includes("$")) {
 				const words = lineText.split(/\s+/);
-				return words[0];
+				for (let j = words.length - 1; j >= 0; j--) {
+					if (words[j].startsWith("$")) {
+						return words[j];
+					}
+				}
 			}
 		}
 		return null;
@@ -82,7 +85,9 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
 		const componentData = projectData.componentsWithProperties.get(componentName);
 		const completions: vscode.CompletionItem[] = [];
 
+		console.log("ASDASDAADASD", componentName);
 		console.log(componentData?.properties);
+		console.log(componentData?.file);
 		if (componentData) {
 			for (const property of componentData.properties) {
 				const completion = new vscode.CompletionItem(property, vscode.CompletionItemKind.Property);
