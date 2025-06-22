@@ -90,47 +90,6 @@ export class DiagnosticProvider {
 			return null;
 		}
 
-		// Проверяем, существует ли компонент в проекте
-		const projectData = this.getProjectData();
-		if (!projectData.componentsWithProperties.has(componentName)) {
-			// Проверяем, не является ли это базовым $mol компонентом
-			const molComponents = [
-				"$mol_view",
-				"$mol_button",
-				"$mol_link",
-				"$mol_text",
-				"$mol_list",
-				"$mol_page",
-				"$mol_form",
-				"$mol_card",
-			];
-			if (!molComponents.includes(componentName)) {
-				this.addDiagnostic(
-					diagnostics,
-					lineNumber,
-					0,
-					componentName.length,
-					`Component '${componentName}' not found in project`,
-					vscode.DiagnosticSeverity.Warning,
-				);
-			}
-		}
-
-		// Проверяем дополнительные параметры после имени компонента
-		if (words.length > 1) {
-			const params = words.slice(1).join(" ");
-			if (!/^[a-zA-Z0-9_\s]*$/.test(params)) {
-				this.addDiagnostic(
-					diagnostics,
-					lineNumber,
-					componentName.length + 1,
-					line.length,
-					"Invalid component parameters",
-					vscode.DiagnosticSeverity.Warning,
-				);
-			}
-		}
-
 		return componentName;
 	}
 

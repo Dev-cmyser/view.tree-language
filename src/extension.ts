@@ -78,22 +78,19 @@ function parseViewTreeFile(content: string): { componentsWithProperties: Map<str
 
 		// Ищем свойства компонента
 		if (currentComponent) {
-			// Проверяем узлы ТОЛЬКО с одним табом и БЕЗ биндингов и других символов
-			const firstLevelMatch = line.match(/^\t([a-zA-Z_][a-zA-Z0-9_?*]*)\s*$/);
-			if (firstLevelMatch) {
-				// Исключаем строки с биндингами <=, <=>, =>, слэшами и другими символами
-				if (line.includes("<=") || line.includes("=>") || line.includes("/") || line.includes("\\")) {
-					continue;
-				}
+			// Проверяем строки с одним табом и берем первое слово после пробела
+			if (line.startsWith("\t") && !line.startsWith("\t\t")) {
+				const afterTab = line.substring(1).trim();
+				if (afterTab) {
+					const words = afterTab.split(/\s+/);
+					const property = words[0];
 
-				// Добавляем первое слово как свойство без дополнительных проверок
-				const property = firstLevelMatch[1];
-
-				// Добавляем свойство в componentsWithProperties для текущего компонента
-				if (!componentsWithProperties.has(currentComponent)) {
-					componentsWithProperties.set(currentComponent, new Set());
+					// Добавляем свойство в componentsWithProperties для текущего компонента
+					if (!componentsWithProperties.has(currentComponent)) {
+						componentsWithProperties.set(currentComponent, new Set());
+					}
+					componentsWithProperties.get(currentComponent)!.add(property);
 				}
-				componentsWithProperties.get(currentComponent)!.add(property);
 			}
 		}
 	}
