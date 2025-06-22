@@ -1,5 +1,10 @@
 import * as vscode from "vscode";
 import { DefinitionProvider } from "./definition-provider";
+import { CompletionProvider } from "./completion-provider";
+import { DiagnosticProvider } from "./diagnostic-provider";
+import { RenameProvider } from "./rename-provider";
+import { PreviewProvider } from "./preview-provider";
+import { HoverProvider } from "./hover-provider";
 
 interface ProjectData {
 	componentsWithProperties: Map<string, { properties: Set<string>; file: string }>;
@@ -8,6 +13,8 @@ interface ProjectData {
 let projectData: ProjectData = {
 	componentsWithProperties: new Map(),
 };
+
+let diagnosticProvider: DiagnosticProvider;
 
 async function refreshProjectData() {
 	console.log("[view.tree] Refreshing project data...");
@@ -171,6 +178,12 @@ async function updateSingleFile(uri: vscode.Uri) {
 		projectData.componentsWithProperties.set(component, { properties, file: uri.path });
 		console.log(`[view.tree] New components  ${components} \n ${properties}:`);
 	}
+
+	// Обновляем диагностику для .view.tree файлов
+	if (uri.path.endsWith(".view.tree") && diagnosticProvider) {
+		const document = await vscode.workspace.openTextDocument(uri);
+		diagnosticProvider.validateDocument(document);
+	}
 }
 
 async function removeSingleFile(uri: vscode.Uri) {
@@ -186,15 +199,87 @@ async function removeSingleFile(uri: vscode.Uri) {
 	}
 }
 
-// Инициализируем сканирование
-refreshProjectData();
+export function activate(context: vscode.ExtensionContext) {
+	// Инициализируем сканирование
+	refreshProjectData();
 
-// Регистрируем провайдер определений
-const definitionProvider = new DefinitionProvider(() => projectData);
-vscode.languages.registerDefinitionProvider({ scheme: "file", language: "tree" }, definitionProvider);
+	// Создаем экземпляры провайдеров
+	const definitionProvider = new DefinitionProvider(() => projectData);
+	const completionProvider = new CompletionProvider(() => projectData);
+	diagnosticProvider = new DiagnosticProvider(() => projectData);
+	const renameProvider = new RenameProvider(() => projectData, refreshProjectData);
+	const hoverProvider = new HoverProvider(() => projectData);
+	const previewProvider = new PreviewProvider(context.extensionUri, () => projectData);
 
-// Отслеживаем изменения файлов
-const fileWatcher = vscode.workspace.createFileSystemWatcher("**/*.{view.tree,ts}");
-fileWatcher.onDidChange(updateSingleFile);
-fileWatcher.onDidCreate(updateSingleFile);
-fileWatcher.onDidDelete(removeSingleFile);
+	// Регистрируем провайдеры для .view.tree файлов
+	const treeSelector = { scheme: "file", language: "tree" };
+
+	context.subscriptions.push(
+		// Definition Provider (Go to Definition)
+		vscode.languages.registerDefinitionProvider(treeSelector, definitionProvider),
+
+		// Completion Provider (IntelliSense)
+		vscode.languages.registerCompletionItemProvider(
+			treeSelector,
+			completionProvider,
+			"$", // Trigger completion when typing $
+			"\t", // Trigger completion when indenting
+		),
+
+		// Rename Provider
+		vscode.languages.registerRenameProvider(treeSelector, renameProvider),
+
+		// Hover Provider
+		vscode.languages.registerHoverProvider(treeSelector, hoverProvider),
+
+		// Preview Provider (WebView)
+		vscode.window.registerWebviewViewProvider(PreviewProvider.viewType, previewProvider),
+
+		// Diagnostic Provider
+		diagnosticProvider,
+	);
+
+	// Отслеживаем изменения файлов
+	const fileWatcher = vscode.workspace.createFileSystemWatcher("**/*.{view.tree,ts}");
+	context.subscriptions.push(
+		fileWatcher,
+		fileWatcher.onDidChange(updateSingleFile),
+		fileWatcher.onDidCreate(updateSingleFile),
+		fileWatcher.onDidDelete(removeSingleFile),
+	);
+
+	// Валидируем все открытые .view.tree файлы при активации
+	vscode.workspace.textDocuments
+		.filter((doc) => doc.fileName.endsWith(".view.tree"))
+		.forEach((doc) => diagnosticProvider.validateDocument(doc));
+
+	// Слушаем изменения в документах для диагностики
+	context.subscriptions.push(
+		vscode.workspace.onDidChangeTextDocument((e) => {
+			if (e.document.fileName.endsWith(".view.tree")) {
+				diagnosticProvider.validateDocument(e.document);
+			}
+		}),
+
+		vscode.workspace.onDidOpenTextDocument((doc) => {
+			if (doc.fileName.endsWith(".view.tree")) {
+				diagnosticProvider.validateDocument(doc);
+			}
+		}),
+
+		vscode.workspace.onDidCloseTextDocument((doc) => {
+			if (doc.fileName.endsWith(".view.tree")) {
+				diagnosticProvider.clearDiagnostics(doc);
+			}
+		}),
+	);
+
+	console.log("[view.tree] Extension activated with all providers");
+}
+
+export function deactivate() {
+	if (diagnosticProvider) {
+		diagnosticProvider.dispose();
+	}
+	console.log("[view.tree] Extension deactivated");
+}
