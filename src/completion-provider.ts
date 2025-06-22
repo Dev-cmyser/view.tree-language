@@ -21,16 +21,17 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
 			return undefined;
 		}
 
-		// Определяем уровень отступов
-		const indentLevel = this.getIndentLevel(lineText);
+		// Получаем первый не-пробельный символ на текущей строке
+		const trimmedLine = lineText.trim();
+		const firstChar = trimmedLine.charAt(0);
 
-		// Если мы на первом уровне (без отступов), предлагаем компоненты
-		if (indentLevel === 0) {
+		// Если первый символ $ - предлагаем компоненты
+		if (firstChar === "$") {
 			return this.getComponentCompletions();
 		}
 
-		// Если мы на втором уровне (один таб), предлагаем свойства текущего компонента
-		if (indentLevel === 1) {
+		// Если любой другой символ (или пустая строка) - предлагаем свойства
+		if (firstChar !== "$") {
 			const currentComponent = this.getCurrentComponent(document, position);
 			if (currentComponent) {
 				return this.getPropertyCompletions(currentComponent);
@@ -38,11 +39,6 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
 		}
 
 		return undefined;
-	}
-
-	private getIndentLevel(lineText: string): number {
-		const match = lineText.match(/^(\t*)/);
-		return match ? match[1].length : 0;
 	}
 
 	private getCurrentComponent(document: vscode.TextDocument, position: vscode.Position): string | null {
@@ -86,6 +82,7 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
 		const componentData = projectData.componentsWithProperties.get(componentName);
 		const completions: vscode.CompletionItem[] = [];
 
+		console.log(componentData?.properties);
 		if (componentData) {
 			for (const property of componentData.properties) {
 				const completion = new vscode.CompletionItem(property, vscode.CompletionItemKind.Property);
@@ -100,7 +97,7 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
 					completion.insertText = new vscode.SnippetString(`${property} \${1|true,false|}`);
 				} else if (property === "sub" || property === "content") {
 					// Для свойств которые обычно содержат вложенные элементы
-					completion.insertText = new vscode.SnippetString(`${property}\n\t\t$0`);
+					completion.insertText = new vscode.SnippetString(`${property} /\n\t\t$0`);
 				} else {
 					// Для обычных свойств
 					completion.insertText = new vscode.SnippetString(`${property} $0`);
@@ -108,6 +105,26 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
 
 				completions.push(completion);
 			}
+		}
+
+		// Добавляем специальные синтаксические элементы view.tree
+		const syntaxElements = [
+			{ name: "<=", desc: "One-way binding (property <= source)", insertText: "<= ${1:property}" },
+			{ name: "=>", desc: "Output binding (property => target)", insertText: "=> ${1:target}" },
+			{ name: "<=>", desc: "Two-way binding (property <=> other)", insertText: "<=> ${1:property}" },
+			{ name: "/", desc: "Empty list declaration", insertText: "/\n\t\t$0" },
+			{ name: "*", desc: "Dictionary/map declaration", insertText: "*\n\t\t$0" },
+			{ name: "@", desc: "Localization marker", insertText: "@ \\${1:text}" },
+			{ name: "\\", desc: "Raw string literal", insertText: "\\${1:text}" },
+		];
+
+		for (const element of syntaxElements) {
+			const completion = new vscode.CompletionItem(element.name, vscode.CompletionItemKind.Keyword);
+			completion.detail = element.desc;
+			completion.documentation = new vscode.MarkdownString(`**${element.name}** - ${element.desc}`);
+			completion.insertText = new vscode.SnippetString(element.insertText);
+			completion.sortText = "y" + element.name; // Помещаем перед общими свойствами
+			completions.push(completion);
 		}
 
 		return completions;
