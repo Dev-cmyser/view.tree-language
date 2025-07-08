@@ -156,7 +156,6 @@ async function updateSingleFile(uri: vscode.Uri) {
 	console.log(`[view.tree] Updating single file: ${uri.path}`);
 	// Получаем актуальные компоненты из файла
 	const components = await getComponentsFromFile(uri);
-	console.log(`[view.tree] New components  ${components} aaaa:`);
 
 	// Удаляем все компоненты которые могли быть из этого файла
 	// (так как 1 файл = 1 компонент, удаляем по ключам новых компонентов)

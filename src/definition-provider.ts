@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import { SourceMapConsumer } from "source-map-js";
 
+type NodeType = "root_class" | "class" | "prop" | "sub_prop" | "comp";
+
 export class DefinitionProvider implements vscode.DefinitionProvider {
 	constructor(
 		private getProjectData: () => {
@@ -37,7 +39,7 @@ export class DefinitionProvider implements vscode.DefinitionProvider {
 		return vscode.workspace.workspaceFolders![0].uri;
 	}
 
-	private getNodeType(document: vscode.TextDocument, wordRange: vscode.Range) {
+	private getNodeType(document: vscode.TextDocument, wordRange: vscode.Range): NodeType {
 		if (wordRange.start.character == 1 && wordRange.start.line == 0) return "root_class";
 
 		const firstChar = document.getText(new vscode.Range(wordRange.start.translate(0, -1), wordRange.start));
