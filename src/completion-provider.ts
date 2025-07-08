@@ -42,6 +42,11 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
 	}
 
 	private getCurrentComponent(document: vscode.TextDocument, position: vscode.Position): string | null {
+		// Ищем текущую строку и проверяем, есть ли в ней биндинг
+		const currentLine = document.lineAt(position.line);
+		const currentText = currentLine.text.trim();
+		const hasBinding = currentText.includes("<=") || currentText.includes("=>") || currentText.includes("<=>");
+
 		// Ищем ближайший компонент вверх от текущей позиции
 		for (let i = position.line - 1; i >= 0; i--) {
 			const line = document.lineAt(i);
@@ -51,6 +56,10 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
 				const words = lineText.split(/\s+/);
 				for (let j = words.length - 1; j >= 0; j--) {
 					if (words[j].startsWith("$")) {
+						// Если есть биндинг, возвращаем корневой компонент
+						if (hasBinding && i > 0) {
+							continue;
+						}
 						return words[j];
 					}
 				}
