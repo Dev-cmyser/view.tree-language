@@ -25,9 +25,13 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
 		const trimmedLine = lineText.trim();
 		const firstChar = trimmedLine.charAt(0);
 
-		// Если первый символ $ - предлагаем компоненты
-		if (firstChar === "$") {
-			return this.getComponentCompletions();
+		// Если каретка в слове, начинающемся с "$" — предлагаем компоненты
+		const wordRange =
+			document.getWordRangeAtPosition(position, /[$\w]+/) ??
+			document.getWordRangeAtPosition(position.translate(0, -1), /[$\w]+/); // на случай каретки в конце слова
+
+		if (wordRange && document.getText(wordRange).startsWith("$")) {
+			return this.getComponentCompletions(/* можно передать wordRange для replace */);
 		}
 
 		// Если любой другой символ (или пустая строка) - предлагаем свойства
