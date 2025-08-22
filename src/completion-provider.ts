@@ -45,29 +45,46 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
 		return undefined;
 	}
 
+	// Главная: вернуть компонент в зависимости от положения каретки относительно биндинга
 	private getCurrentComponent(document: vscode.TextDocument, position: vscode.Position): string | null {
-		// Ищем текущую строку и проверяем, есть ли в ней биндинг
-		const currentLine = document.lineAt(position.line);
-		const currentText = currentLine.text.trim();
-		const hasBinding = currentText.includes("<=") || currentText.includes("=>") || currentText.includes("<=>");
+		const lineText = document.lineAt(position.line).text; // не trim — важны колонки
+		const binding = this.findBinding(lineText);
 
-		// Ищем ближайший компонент вверх от текущей позиции
-		for (let i = position.line - 1; i >= 0; i--) {
-			const line = document.lineAt(i);
-			const lineText = line.text.trim();
+		// Если биндинга нет — считаем «текущий» компонент (как раньше, вверх от курсора)
+		if (!binding) return this.getNearestComponentAbove(document, position.line);
 
-			if (lineText.includes("$")) {
-				const words = lineText.split(/\s+/);
-				for (let j = words.length - 1; j >= 0; j--) {
-					if (words[j].startsWith("$")) {
-						// Если есть биндинг, возвращаем корневой компонент
-						if (hasBinding && i > 0) {
-							continue;
-						}
-						return words[j];
-					}
-				}
-			}
+		// Каретка справа от биндинга → корневой компонент
+		if (position.character > binding.end) {
+			return this.getRootComponent(document);
+		}
+
+		// Каретка слева от биндинга → ближайший вверх (строки выше текущей)
+		return this.getNearestComponentAbove(document, position.line - 1);
+	}
+
+	// Ищем первый биндинг в строке и его диапазон
+	private findBinding(text: string): { start: number; end: number; op: string } | null {
+		const re = /<=>|<=|=>/g; // порядок важен: <=> раньше <=/=>
+		const m = re.exec(text);
+		return m ? { op: m[0], start: m.index, end: m.index + m[0].length } : null;
+	}
+
+	private getRootComponent(document: vscode.TextDocument): string | null {
+		const firstLine = document.lineAt(0).text.replace(/^\uFEFF/, ""); // на случай BOM
+		const token = firstLine.trim().split(/\s+/)[0];
+		return token || null;
+	}
+
+	// Ближайший вверх $Класс, начиная с указанной строки (включительно)
+	private getNearestComponentAbove(document: vscode.TextDocument, startLine: number): string | null {
+		for (let i = Math.min(startLine, document.lineCount - 1); i >= 0; i--) {
+			const text = document.lineAt(i).text;
+			if (/^\s*(#|$)/.test(text)) continue;
+			// Игнорируем строки, где весь смысл — биндинги без объявления компонента слева
+			if (/(<=|=>|<=>)/.test(text) && !/\$[A-Za-z0-9_]+/.test(text)) continue;
+
+			const m = text.match(/\$[A-Za-z0-9_]+/);
+			if (m) return m[0];
 		}
 		return null;
 	}
