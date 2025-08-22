@@ -100,8 +100,7 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
 				`**${componentName}**\n\nAvailable properties: ${Array.from(componentData.properties).join(", ")}`,
 			);
 
-			// Добавляем snippet для автоматического перехода на следующую строку
-			completion.insertText = new vscode.SnippetString(`${componentName}\n\t$0`);
+			completion.insertText = componentName.startsWith("$") ? componentName.slice(1) : componentName;
 			completion.command = { command: "vscode.executeCompletionItemProvider", title: "Re-trigger completions" };
 
 			completions.push(completion);
