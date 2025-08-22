@@ -70,6 +70,15 @@ function parseViewTreeFile(content: string): { componentsWithProperties: Map<str
 			}
 		}
 
+		// Если строка с одним табом и есть биндинг "<= PropName" → добавляем PropName
+		if (currentComponent && line.startsWith("\t") && !line.startsWith("\t\t")) {
+			const afterTab = line.slice(1).trim();
+			const m = afterTab.match(/<=\s*([A-Za-z_][A-Za-z0-9_]*\??)/);
+			if (m) {
+				componentsWithProperties.get(currentComponent)!.add(m[1]);
+			}
+		}
+
 		// Ищем свойства компонента
 		if (currentComponent) {
 			// Проверяем строки с одним табом и берем первое слово после пробела
