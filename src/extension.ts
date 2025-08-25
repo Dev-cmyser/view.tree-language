@@ -126,16 +126,20 @@ async function getComponentsFromFile(uri: vscode.Uri): Promise<Map<string, Set<s
 		const buffer = await vscode.workspace.fs.readFile(uri);
 		const content = buffer.toString();
 
-		if (uri.path.endsWith(".view.tree")) {
-			const result = parseViewTreeFile(content);
-			for (const [component, properties] of result.componentsWithProperties) {
-				componentsWithProperties.set(component, properties);
+		// Пропускаем только если файл не лежит в "-" папке
+		if (!uri.path.includes("/-/") || !uri.path.includes("/-view.tree/")) {
+			if (uri.path.endsWith(".view.tree")) {
+				const result = parseViewTreeFile(content);
+				for (const [component, properties] of result.componentsWithProperties) {
+					componentsWithProperties.set(component, properties);
+				}
 			}
-		}
-		if (uri.path.endsWith(".ts")) {
-			const result = parseTsFile(content);
-			for (const [component, properties] of result.componentsWithProperties) {
-				componentsWithProperties.set(component, properties);
+
+			if (uri.path.endsWith(".ts")) {
+				const result = parseTsFile(content);
+				for (const [component, properties] of result.componentsWithProperties) {
+					componentsWithProperties.set(component, properties);
+				}
 			}
 		}
 	} catch (error) {
