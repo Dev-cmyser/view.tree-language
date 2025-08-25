@@ -63,38 +63,21 @@ function parseViewTreeFile(content: string): { componentsWithProperties: Map<str
 		// Берем только первое слово из строк без отступа
 		if (!line.startsWith("\t")) {
 			const words = trimmed.split(/\s+/);
-			const firstWord = words[0];
-			currentComponent = firstWord;
-			if (!componentsWithProperties.has(firstWord)) {
-				componentsWithProperties.set(firstWord, new Set());
-			}
+			currentComponent = words[0];
+			componentsWithProperties.set(currentComponent, new Set());
+			continue;
+		}
+		if (!currentComponent) continue;
+
+		// Проверяем строки с одним табом и берем первое слово после пробела
+		if (!line.startsWith("\t\t")) {
+			const words = trimmed.split(/\s+/);
+			componentsWithProperties.get(currentComponent)!.add(words[0]);
 		}
 
-		// Если строка с одним табом и есть биндинг "<= PropName" → добавляем PropName
-		if (currentComponent && line.startsWith("\t") && !line.startsWith("\t\t")) {
-			const afterTab = line.slice(1).trim();
-			const m = afterTab.match(/<=\s*([A-Za-z_][A-Za-z0-9_]*\??)/);
-			if (m) {
-				componentsWithProperties.get(currentComponent)!.add(m[1]);
-			}
-		}
-
-		// Ищем свойства компонента
-		if (currentComponent) {
-			// Проверяем строки с одним табом и берем первое слово после пробела
-			if (line.startsWith("\t") && !line.startsWith("\t\t")) {
-				const afterTab = line.substring(1).trim();
-				if (afterTab) {
-					const words = afterTab.split(/\s+/);
-					const property = words[0];
-
-					// Добавляем свойство в componentsWithProperties для текущего компонента
-					if (!componentsWithProperties.has(currentComponent)) {
-						componentsWithProperties.set(currentComponent, new Set());
-					}
-					componentsWithProperties.get(currentComponent)!.add(property);
-				}
-			}
+		const matches = trimmed.matchAll(/(?:=>|<=>|<=) (\w*)/g);
+		for (const match of matches) {
+			componentsWithProperties.get(currentComponent)!.add(match[1]);
 		}
 	}
 
